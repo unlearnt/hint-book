@@ -32,9 +32,8 @@ function requireAuth(req, res, next) {
 }
 
 const app = express();
-app.use(express.json());
 
-app.post("/api/auth/login", (req, res) => {
+app.post("/api/auth/login", express.json(), (req, res) => {
   if (!PASSWORD || req.body.password === PASSWORD) {
     const token = crypto.randomBytes(32).toString("hex");
     sessions.add(token);
@@ -45,7 +44,7 @@ app.post("/api/auth/login", (req, res) => {
   }
 });
 
-app.post("/api/auth/logout", (req, res) => {
+app.post("/api/auth/logout", express.json(), (req, res) => {
   const token = parseCookies(req.headers.cookie).hb_session;
   sessions.delete(token);
   res.setHeader("Set-Cookie", "hb_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0");
