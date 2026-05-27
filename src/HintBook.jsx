@@ -2,6 +2,17 @@ import { useState, useRef, useEffect } from "react";
 import PAGES from "./hints/index.js";
 
 
+const ASSESS_MODELS=[
+  {id:"Qwen/Qwen3-VL-235B-A22B-Instruct",label:"Qwen3-VL 235B"},
+  {id:"Qwen/Qwen2.5-VL-72B-Instruct",label:"Qwen2.5-VL 72B"},
+  {id:"meta-llama/Llama-4-Maverick-17B-128E-Instruct",label:"Llama 4 Maverick"},
+];
+const GEN_MODELS=[
+  {id:"deepseek-ai/DeepSeek-V4-Pro",label:"DeepSeek V4 Pro"},
+  {id:"deepseek-ai/DeepSeek-R1",label:"DeepSeek R1"},
+  {id:"Qwen/Qwen3-235B-A22B",label:"Qwen3 235B"},
+];
+
 const AC=a=>({YES:"#16a34a",NO:"#dc2626",WARN:"#d97706",CONTEXT:"#2563eb",UNVERIFIABLE:"#6b7280"})[a]||"#6b7280";
 const AB=a=>({YES:"#f0fdf4",NO:"#fef2f2",WARN:"#fffbeb",CONTEXT:"#eff6ff",UNVERIFIABLE:"#f9fafb"})[a]||"#f9fafb";
 const ABd=a=>({YES:"#86efac",NO:"#fca5a5",WARN:"#fde68a",CONTEXT:"#bfdbfe",UNVERIFIABLE:"#e5e7eb"})[a]||"#e5e7eb";
@@ -44,8 +55,14 @@ export default function HintBookApp(){
   const[addInput,setAddInput]=useState("");
   const[genBusy,setGenBusy]=useState(false);
   const[genErr,setGenErr]=useState(null);
+  const[assessModel,setAssessModel]=useState(ASSESS_MODELS[0].id);
+  const[genModel,setGenModel]=useState(GEN_MODELS[0].id);
+  const[streamThink,setStreamThink]=useState("");
+  const[streamContent,setStreamContent]=useState("");
+  const[genStreamThink,setGenStreamThink]=useState("");
+  const[genStreamContent,setGenStreamContent]=useState("");
   const fileRef=useRef();const addRef=useRef();
-  const addInputRef=useRef();const leaveTimer=useRef();
+  const addInputRef=useRef();const leaveTimer=useRef();const addPanelRef=useRef();
   const dragging=useRef(false);const dragX=useRef(0);const dragW=useRef(0);
   const allPages={...PAGES,...dynPages};
   const pg=allPages[pgId]||Object.values(allPages)[0];
@@ -54,6 +71,28 @@ export default function HintBookApp(){
   const flip=id=>setOpen(p=>({...p,[id]:!isOpen(id)}));
   const allOpen=()=>{const n={};pg.sections.forEach(s=>{n[s.id]=true;});setOpen(n);};
   const allClose=()=>{const n={};pg.sections.forEach(s=>{n[s.id]=false;});setOpen(n);};
+
+  const streamSSE=async(url,body,onThink,onContent)=>{
+    const resp=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body,stream:true})});
+    if(!resp.ok){const e=await resp.json().catch(()=>({}));throw new Error(e.error?.message||`HTTP ${resp.status}`);}
+    const reader=resp.body.getReader();const decoder=new TextDecoder();
+    let buf="";let fullContent="";let fullThink="";
+    while(true){
+      const{done,value}=await reader.read();if(done)break;
+      buf+=decoder.decode(value,{stream:true});
+      const lines=buf.split("\n");buf=lines.pop();
+      for(const line of lines){
+        if(!line.startsWith("data: "))continue;
+        const d=line.slice(6).trim();if(d==="[DONE]")continue;
+        try{
+          const delta=JSON.parse(d).choices?.[0]?.delta;
+          if(delta?.reasoning_content){fullThink+=delta.reasoning_content;onThink(fullThink);}
+          if(delta?.content){fullContent+=delta.content;onContent(fullContent);}
+        }catch{}
+      }
+    }
+    return fullContent;
+  };
 
   const exportPage=p=>{
     const js=`const ${p.id.toUpperCase().replace(/[^A-Z0-9]/g,"_")}=${JSON.stringify(p,null,2)};\n\nexport default ${p.id.toUpperCase().replace(/[^A-Z0-9]/g,"_")};\n`;
@@ -84,23 +123,21 @@ export default function HintBookApp(){
 
   const doAssess=async()=>{
     if(!imgs.length||busy)return;
-    setBusy(true);setErr(null);setResult(null);
-    const MSGS=[`Analyzing image${imgs.length>1?"s":""}…`,`Running ${total} hint checks…`,"Cross-referencing fields…","Checking MRZ consistency…","Checking semantic consistency…","Compiling assessment…"];
-    let mi=0;setBmsg(MSGS[0]);const tick=setInterval(()=>{mi=(mi+1)%MSGS.length;setBmsg(MSGS[mi]);},1800);
+    setBusy(true);setErr(null);setResult(null);setStreamThink("");setStreamContent("");
     try{
       const qs=pg.sections.map(s=>`[${s.id}] ${s.title}\n`+s.hints.map(h=>`  ${h[0]} (expect:${h[3]}): ${h[1]}${h[2]?` [${h[2]}]`:""}`).join("\n")).join("\n\n");
-      const resp=await fetch("/api/llm/chat/completions",{
-        method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({model:"Qwen/Qwen3-VL-235B-A22B-Instruct",max_tokens:4096,messages:[{role:"user",content:[
+      const raw=await streamSSE(
+        "/api/llm/chat/completions",
+        {model:assessModel,max_tokens:4096,messages:[{role:"user",content:[
           ...imgs.map(img=>({type:"image_url",image_url:{url:img.preview}})),
           {type:"text",text:`You are an expert document fraud detection AI. Analyze the provided image(s) of a "${pg.title}" document against this checklist.\n\nAnswer: YES (confirmed), NO (anomaly/red flag), WARN (borderline), UNVERIFIABLE (can't determine from image), CONTEXT (generation-dependent — describe what you observe).\ncriticalFails = (NO where expect=YES) + (YES where expect=NO). warnings = WARN count. passes = correct YES/NO answers. unverifiable = UNVERIFIABLE + CONTEXT count.\nProvide a 1-sentence finding per check.\n\nCHECKLIST:\n${qs}\n\nReturn ONLY valid JSON, no markdown fences:\n{"verdict":"HIGHLY_SUSPICIOUS|SUSPICIOUS|APPEARS_LEGITIMATE|CANNOT_DETERMINE","summary":"2-3 sentence assessment naming specific anomalies","criticalFails":0,"warnings":0,"passes":0,"unverifiable":0,"sections":[{"id":"","title":"","checks":[{"id":"","answer":"YES|NO|WARN|UNVERIFIABLE|CONTEXT","finding":"1 sentence"}]}]}`}
-        ]}]})
-      });
-      const data=await resp.json();if(data.error)throw new Error(data.error.message||"API error");
-      const raw=data.choices?.[0]?.message?.content||"";
+        ]}]},
+        setStreamThink,
+        setStreamContent
+      );
       setResult(JSON.parse(raw.replace(/```(?:json)?\s*|\s*```/g,"").trim()));
     }catch(e){setErr(e.message||"Assessment failed");}
-    finally{clearInterval(tick);setBusy(false);setBmsg("");}
+    finally{setBusy(false);setBmsg("");}
   };
 
   const findQ=(sid,cid)=>pg.sections.find(s=>s.id===sid)?.hints.find(h=>h[0]===cid)?.[1]||cid;
@@ -190,29 +227,25 @@ QUALITY REQUIREMENTS:
 
   const generateHintPage=async()=>{
     if(!addInput.trim()||genBusy)return;
-    setGenBusy(true);setGenErr(null);
+    setGenBusy(true);setGenErr(null);setGenStreamThink("");setGenStreamContent("");
     try{
-      const resp=await fetch("/api/llm/chat/completions",{
-        method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({
-          model:"deepseek-ai/DeepSeek-V4-Pro",
-          max_tokens:6000,
-          messages:[{role:"user",content:HINTBOOK_PROMPT(addInput.trim())}]
-        })
-      });
-      const data=await resp.json();
-      if(data.error)throw new Error(data.error.message||"API error");
-      const raw=data.choices?.[0]?.message?.content||"";
+      const raw=await streamSSE(
+        "/api/llm/chat/completions",
+        {model:genModel,max_tokens:6000,messages:[{role:"user",content:HINTBOOK_PROMPT(addInput.trim())}]},
+        setGenStreamThink,
+        setGenStreamContent
+      );
       const page=JSON.parse(raw.replace(/```(?:json)?\s*|\s*```/g,"").trim());
       if(!page.id||!page.sections)throw new Error("Malformed response — missing id or sections");
       setDynPages(prev=>({...prev,[page.id]:page}));
       setPgId(page.id);setAddInput("");setAddOpen(false);setResult(null);setImgs([]);setOpen({});
+      setGenStreamThink("");setGenStreamContent("");
     }catch(e){setGenErr(e.message||"Generation failed. Try again.");}
     finally{setGenBusy(false);}
   };
 
   const openAdd=()=>{clearTimeout(leaveTimer.current);setAddOpen(true);setTimeout(()=>addInputRef.current?.focus(),50);};
-  const closeAdd=()=>{leaveTimer.current=setTimeout(()=>{if(document.activeElement!==addInputRef.current)setAddOpen(false);},200);};
+  const closeAdd=()=>{leaveTimer.current=setTimeout(()=>{if(!addPanelRef.current?.contains(document.activeElement))setAddOpen(false);},200);};
   const vc=VCFG[result?.verdict]||VCFG.CANNOT_DETERMINE;
   const fmtSize=b=>b>1e6?`${(b/1e6).toFixed(1)}MB`:`${(b/1024).toFixed(0)}KB`;
 
@@ -255,11 +288,16 @@ QUALITY REQUIREMENTS:
               </div>
             );})}
           </div>
-          <div onMouseEnter={openAdd} onMouseLeave={closeAdd}
+          <div ref={addPanelRef} onMouseEnter={openAdd} onMouseLeave={closeAdd}
             style={{borderTop:"1px solid #1e293b",flexShrink:0}}>
             {/* Sliding input panel */}
             <div style={{maxHeight:addOpen?"130px":"0px",overflow:"hidden",transition:"max-height .22s ease-out"}}>
               <div style={{padding:"10px 9px 6px"}}>
+                <div style={{fontSize:"9px",fontWeight:600,color:"#475569",letterSpacing:".06em",textTransform:"uppercase",marginBottom:6}}>Model</div>
+                <select value={genModel} onChange={e=>setGenModel(e.target.value)} disabled={genBusy}
+                  style={{width:"100%",fontSize:"11px",padding:"6px 8px",borderRadius:6,border:"1px solid #334155",background:"#1e293b",color:"#94a3b8",outline:"none",fontFamily:"system-ui,sans-serif",marginBottom:8,cursor:"pointer"}}>
+                  {GEN_MODELS.map(m=><option key={m.id} value={m.id}>{m.label}</option>)}
+                </select>
                 <div style={{fontSize:"9px",fontWeight:600,color:"#475569",letterSpacing:".06em",textTransform:"uppercase",marginBottom:6}}>Document type to add</div>
                 <input ref={addInputRef} value={addInput}
                   onChange={e=>{setAddInput(e.target.value);setGenErr(null);}}
@@ -271,6 +309,23 @@ QUALITY REQUIREMENTS:
                 {genErr&&<div style={{marginTop:5,fontSize:"10px",color:"#f87171",lineHeight:1.4,background:"rgba(239,68,68,.1)",padding:"4px 8px",borderRadius:5}}>{genErr}</div>}
               </div>
             </div>
+            {/* Streaming output for hint generation */}
+            {genBusy&&(genStreamThink||genStreamContent)&&(
+              <div style={{padding:"0 9px 8px"}}>
+                {genStreamThink&&(<details open style={{marginBottom:6,borderRadius:7,overflow:"hidden",border:"1px solid #312e81"}}>
+                  <summary style={{padding:"5px 9px",background:"#1e1b4b",cursor:"pointer",fontSize:"10px",fontWeight:600,color:"#a5b4fc",listStyle:"none",display:"flex",alignItems:"center",gap:5}}>
+                    <i className="ti ti-brain sp" style={{fontSize:11}}/> Thinking…
+                  </summary>
+                  <div style={{padding:"8px 9px",fontFamily:"monospace",fontSize:"10px",color:"#818cf8",lineHeight:1.6,whiteSpace:"pre-wrap",maxHeight:160,overflowY:"auto",background:"#0f0a2e"}}>{genStreamThink}</div>
+                </details>)}
+                {genStreamContent&&(<div style={{borderRadius:7,overflow:"hidden",border:"1px solid #1e3a5f"}}>
+                  <div style={{padding:"5px 9px",background:"#0c1e35",fontSize:"10px",fontWeight:600,color:"#60a5fa",display:"flex",alignItems:"center",gap:5}}>
+                    <i className="ti ti-loader sp" style={{fontSize:11}}/> Building hint page…
+                  </div>
+                  <div style={{padding:"8px 9px",fontFamily:"monospace",fontSize:"10px",color:"#7dd3fc",lineHeight:1.6,whiteSpace:"pre-wrap",maxHeight:160,overflowY:"auto",background:"#071525"}}>{genStreamContent}</div>
+                </div>)}
+              </div>
+            )}
             {/* Add button */}
             <div style={{padding:"8px 9px"}}>
               <button onClick={generateHintPage}
@@ -281,7 +336,7 @@ QUALITY REQUIREMENTS:
               </button>
             </div>
           </div>
-          <div style={{padding:"8px 13px",borderTop:"1px solid #1e293b"}}><div style={{fontSize:"9px",color:"#334155",lineHeight:1.5}}>Assessment: Qwen3-VL<br/><span style={{color:"#475569"}}>HintGen: DeepSeek V4 Pro</span></div></div>
+          <div style={{padding:"8px 13px",borderTop:"1px solid #1e293b"}}><div style={{fontSize:"9px",color:"#334155",lineHeight:1.5}}>Assessment: <span style={{color:"#475569"}}>{ASSESS_MODELS.find(m=>m.id===assessModel)?.label}</span><br/>HintGen: <span style={{color:"#475569"}}>{GEN_MODELS.find(m=>m.id===genModel)?.label}</span></div></div>
         </div>
 
         {/* CENTER: HINT PAGE */}
@@ -338,7 +393,11 @@ QUALITY REQUIREMENTS:
           <div style={{flexShrink:0,borderBottom:"1px solid #e2e8f0",padding:"13px 15px",background:"white"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:11}}>
               <div><div style={{fontSize:"13px",fontWeight:700,color:"#0f172a"}}>Document Assessment</div><div style={{fontSize:"11px",color:"#64748b",marginTop:2}}>Using <span style={{color:pg.color,fontWeight:600}}>{pg.title}</span> · {total} hint checks · images resized to 1024px</div></div>
-              <div style={{display:"flex",gap:8}}>
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                <select value={assessModel} onChange={e=>setAssessModel(e.target.value)} disabled={busy}
+                  style={{fontSize:"11px",padding:"5px 8px",borderRadius:7,border:"1px solid #e2e8f0",background:"white",color:"#334155",cursor:"pointer",outline:"none",fontFamily:"system-ui,sans-serif"}}>
+                  {ASSESS_MODELS.map(m=><option key={m.id} value={m.id}>{m.label}</option>)}
+                </select>
                 <button className="upbtn" onClick={()=>fileRef.current?.click()} style={{fontSize:"12px",padding:"6px 13px",borderRadius:8,border:"1px solid #e2e8f0",background:"white",cursor:"pointer",color:"#334155",display:"flex",alignItems:"center",gap:6,fontWeight:500,transition:"background .1s"}}><i className="ti ti-upload" style={{fontSize:13}}/>Upload</button>
                 <button className="abtn" onClick={doAssess} disabled={!imgs.length||busy} style={{fontSize:"12px",padding:"6px 15px",borderRadius:8,border:"none",cursor:imgs.length&&!busy?"pointer":"not-allowed",background:imgs.length&&!busy?"#2563eb":"#e2e8f0",color:imgs.length&&!busy?"white":"#94a3b8",display:"flex",alignItems:"center",gap:6,fontWeight:600,transition:"background .15s"}}>
                   <i className={`ti ${busy?"ti-loader sp":"ti-scan"}`} style={{fontSize:13}}/>{busy?"Assessing…":"Assess"}
@@ -369,11 +428,27 @@ QUALITY REQUIREMENTS:
                 {imgs.length<2&&(<div className="addslot" onClick={()=>addRef.current?.click()} style={{flex:1,height:"174px",border:"1.5px dashed #cbd5e1",borderRadius:10,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",cursor:"pointer",color:"#94a3b8",gap:7,background:"#f8fafc",transition:"all .15s"}}><i className="ti ti-plus" style={{fontSize:24}}/><span style={{fontSize:"12px",fontWeight:500}}>Add back</span></div>)}
               </div>
             )}
-            {busy&&<div className="pu" style={{marginTop:9,fontSize:"12px",color:"#2563eb",display:"flex",alignItems:"center",gap:7}}><i className="ti ti-loader sp" style={{fontSize:12}}/>{bmsg}</div>}
+            {busy&&<div style={{marginTop:9,fontSize:"12px",color:"#2563eb",display:"flex",alignItems:"center",gap:7}}><i className="ti ti-loader sp" style={{fontSize:12}}/>Analyzing document…</div>}
           </div>
 
           {/* Results */}
           <div className="rs" style={{flex:1,overflowY:"auto",padding:"13px 15px"}}>
+            {busy&&(streamThink||streamContent)&&(
+              <div style={{marginBottom:13}}>
+                {streamThink&&(<details open style={{marginBottom:8,border:"1px solid #e2e8f0",borderRadius:9,overflow:"hidden"}}>
+                  <summary style={{padding:"7px 12px",background:"#f8fafc",cursor:"pointer",fontSize:"11px",fontWeight:600,color:"#64748b",display:"flex",alignItems:"center",gap:6,listStyle:"none"}}>
+                    <i className="ti ti-brain sp" style={{fontSize:12,color:"#8b5cf6"}}/><span style={{color:"#8b5cf6"}}>Thinking…</span>
+                  </summary>
+                  <div style={{padding:"10px 12px",fontFamily:"monospace",fontSize:"11px",color:"#64748b",lineHeight:1.6,whiteSpace:"pre-wrap",maxHeight:220,overflowY:"auto"}}>{streamThink}</div>
+                </details>)}
+                {streamContent&&(<div style={{border:"1px solid #e2e8f0",borderRadius:9,overflow:"hidden"}}>
+                  <div style={{padding:"7px 12px",background:"#f8fafc",fontSize:"11px",fontWeight:600,color:"#64748b",display:"flex",alignItems:"center",gap:6}}>
+                    <i className="ti ti-loader sp" style={{fontSize:12,color:"#2563eb"}}/><span style={{color:"#2563eb"}}>Generating response…</span>
+                  </div>
+                  <div style={{padding:"10px 12px",fontFamily:"monospace",fontSize:"11px",color:"#334155",lineHeight:1.6,whiteSpace:"pre-wrap",maxHeight:220,overflowY:"auto"}}>{streamContent}</div>
+                </div>)}
+              </div>
+            )}
             {!result&&!err&&!busy&&(<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100%",gap:14,color:"#94a3b8"}}><div style={{width:60,height:60,borderRadius:16,background:"#f1f5f9",display:"flex",alignItems:"center",justifyContent:"center"}}><i className="ti ti-clipboard-list" style={{fontSize:30,color:"#cbd5e1"}}/></div><div style={{textAlign:"center",maxWidth:240}}><div style={{fontSize:"14px",fontWeight:600,color:"#334155",marginBottom:5}}>No assessment yet</div><div style={{fontSize:"12px",lineHeight:1.6,color:"#94a3b8"}}>Upload a document image and click <strong style={{color:"#334155"}}>Assess</strong> to run all <strong style={{color:pg.color}}>{total} checks</strong> from the <strong style={{color:pg.color}}>{pg.title}</strong> hint page</div></div></div>)}
             {err&&(<div style={{padding:"12px 14px",background:"#fef2f2",borderRadius:10,border:"1px solid #fca5a5",display:"flex",gap:10,alignItems:"flex-start"}}><i className="ti ti-alert-circle" style={{fontSize:18,color:"#dc2626",flexShrink:0,marginTop:1}}/><div><div style={{fontSize:"13px",fontWeight:600,color:"#991b1b",marginBottom:2}}>Assessment failed</div><div style={{fontSize:"12px",color:"#b91c1c",lineHeight:1.5}}>{err}</div></div></div>)}
             {result&&(<div>
