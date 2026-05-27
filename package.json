@@ -3,9 +3,16 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite"
+    "dev": "vite",
+    "build": "vite build",
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
+    "express": "^4.21.2",
+    "http-proxy-middleware": "^3.0.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

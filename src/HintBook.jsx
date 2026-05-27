@@ -4,8 +4,9 @@ import PAGES from "./hints/index.js";
 
 const ASSESS_MODELS=[
   {id:"Qwen/Qwen3-VL-235B-A22B-Instruct",label:"Qwen3-VL 235B"},
-  {id:"Qwen/Qwen2.5-VL-72B-Instruct",label:"Qwen2.5-VL 72B"},
-  {id:"meta-llama/Llama-4-Maverick-17B-128E-Instruct",label:"Llama 4 Maverick"},
+  {id:"Qwen/Qwen3-VL-30B-A3B-Instruct",label:"Qwen3-VL 30B"},
+  {id:"google/gemma-4-31B-it",label:"Gemma 4 31B"},
+  {id:"moonshotai/Kimi-K2.6",label:"Kimi K2.6"},
 ];
 const GEN_MODELS=[
   {id:"deepseek-ai/DeepSeek-V4-Pro",label:"DeepSeek V4 Pro"},
@@ -61,9 +62,10 @@ export default function HintBookApp(){
   const[streamContent,setStreamContent]=useState("");
   const[genStreamThink,setGenStreamThink]=useState("");
   const[genStreamContent,setGenStreamContent]=useState("");
-  const fileRef=useRef();const addRef=useRef();
+  const fileRef=useRef();const addRef=useRef();const loadRef=useRef();
   const addInputRef=useRef();const leaveTimer=useRef();const addPanelRef=useRef();
   const dragging=useRef(false);const dragX=useRef(0);const dragW=useRef(0);
+  const assessAbort=useRef(null);const genAbort=useRef(null);
   const allPages={...PAGES,...dynPages};
   const pg=allPages[pgId]||Object.values(allPages)[0];
   const total=pg.sections.reduce((a,s)=>a+s.hints.length,0);
@@ -72,8 +74,8 @@ export default function HintBookApp(){
   const allOpen=()=>{const n={};pg.sections.forEach(s=>{n[s.id]=true;});setOpen(n);};
   const allClose=()=>{const n={};pg.sections.forEach(s=>{n[s.id]=false;});setOpen(n);};
 
-  const streamSSE=async(url,body,onThink,onContent)=>{
-    const resp=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body,stream:true})});
+  const streamSSE=async(url,body,onThink,onContent,signal)=>{
+    const resp=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body,stream:true}),signal});
     if(!resp.ok){const e=await resp.json().catch(()=>({}));throw new Error(e.error?.message||`HTTP ${resp.status}`);}
     const reader=resp.body.getReader();const decoder=new TextDecoder();
     let buf="";let fullContent="";let fullThink="";
@@ -123,6 +125,7 @@ export default function HintBookApp(){
 
   const doAssess=async()=>{
     if(!imgs.length||busy)return;
+    const ctrl=new AbortController();assessAbort.current=ctrl;
     setBusy(true);setErr(null);setResult(null);setStreamThink("");setStreamContent("");
     try{
       const qs=pg.sections.map(s=>`[${s.id}] ${s.title}\n`+s.hints.map(h=>`  ${h[0]} (expect:${h[3]}): ${h[1]}${h[2]?` [${h[2]}]`:""}`).join("\n")).join("\n\n");
@@ -133,11 +136,12 @@ export default function HintBookApp(){
           {type:"text",text:`You are an expert document fraud detection AI. Analyze the provided image(s) of a "${pg.title}" document against this checklist.\n\nAnswer: YES (confirmed), NO (anomaly/red flag), WARN (borderline), UNVERIFIABLE (can't determine from image), CONTEXT (generation-dependent — describe what you observe).\ncriticalFails = (NO where expect=YES) + (YES where expect=NO). warnings = WARN count. passes = correct YES/NO answers. unverifiable = UNVERIFIABLE + CONTEXT count.\nProvide a 1-sentence finding per check.\n\nCHECKLIST:\n${qs}\n\nReturn ONLY valid JSON, no markdown fences:\n{"verdict":"HIGHLY_SUSPICIOUS|SUSPICIOUS|APPEARS_LEGITIMATE|CANNOT_DETERMINE","summary":"2-3 sentence assessment naming specific anomalies","criticalFails":0,"warnings":0,"passes":0,"unverifiable":0,"sections":[{"id":"","title":"","checks":[{"id":"","answer":"YES|NO|WARN|UNVERIFIABLE|CONTEXT","finding":"1 sentence"}]}]}`}
         ]}]},
         setStreamThink,
-        setStreamContent
+        setStreamContent,
+        ctrl.signal
       );
       setResult(JSON.parse(raw.replace(/```(?:json)?\s*|\s*```/g,"").trim()));
-    }catch(e){setErr(e.message||"Assessment failed");}
-    finally{setBusy(false);setBmsg("");}
+    }catch(e){if(e.name!=="AbortError")setErr(e.message||"Assessment failed");}
+    finally{setBusy(false);setBmsg("");assessAbort.current=null;}
   };
 
   const findQ=(sid,cid)=>pg.sections.find(s=>s.id===sid)?.hints.find(h=>h[0]===cid)?.[1]||cid;
@@ -227,23 +231,36 @@ QUALITY REQUIREMENTS:
 
   const generateHintPage=async()=>{
     if(!addInput.trim()||genBusy)return;
+    const ctrl=new AbortController();genAbort.current=ctrl;
     setGenBusy(true);setGenErr(null);setGenStreamThink("");setGenStreamContent("");
     try{
       const raw=await streamSSE(
         "/api/llm/chat/completions",
         {model:genModel,max_tokens:6000,messages:[{role:"user",content:HINTBOOK_PROMPT(addInput.trim())}]},
         setGenStreamThink,
-        setGenStreamContent
+        setGenStreamContent,
+        ctrl.signal
       );
       const page=JSON.parse(raw.replace(/```(?:json)?\s*|\s*```/g,"").trim());
       if(!page.id||!page.sections)throw new Error("Malformed response — missing id or sections");
       setDynPages(prev=>({...prev,[page.id]:page}));
       setPgId(page.id);setAddInput("");setAddOpen(false);setResult(null);setImgs([]);setOpen({});
       setGenStreamThink("");setGenStreamContent("");
-    }catch(e){setGenErr(e.message||"Generation failed. Try again.");}
-    finally{setGenBusy(false);}
+    }catch(e){if(e.name!=="AbortError")setGenErr(e.message||"Generation failed. Try again.");}
+    finally{setGenBusy(false);genAbort.current=null;}
   };
 
+  const loadJsFile=async file=>{
+    try{
+      const text=await file.text();
+      const match=text.match(/=\s*(\{[\s\S]*\})\s*;/);
+      if(!match)throw new Error("No JSON object found in file");
+      const page=JSON.parse(match[1]);
+      if(!page.id||!page.sections)throw new Error("Invalid hint page: missing id or sections");
+      setDynPages(prev=>({...prev,[page.id]:page}));
+      setPgId(page.id);setResult(null);setImgs([]);setErr(null);setOpen({});
+    }catch(ex){setGenErr(ex.message||"Failed to load file");setAddOpen(true);}
+  };
   const openAdd=()=>{clearTimeout(leaveTimer.current);setAddOpen(true);setTimeout(()=>addInputRef.current?.focus(),50);};
   const closeAdd=()=>{leaveTimer.current=setTimeout(()=>{if(!addPanelRef.current?.contains(document.activeElement))setAddOpen(false);},200);};
   const vc=VCFG[result?.verdict]||VCFG.CANNOT_DETERMINE;
@@ -271,7 +288,16 @@ QUALITY REQUIREMENTS:
               <div><div style={{fontSize:"13px",fontWeight:700,color:"white"}}>HintBook</div><div style={{fontSize:"9px",color:"#64748b",marginTop:1,letterSpacing:".05em",textTransform:"uppercase"}}>Doc Assessment</div></div>
             </div>
           </div>
-          <div style={{padding:"10px 13px 5px",fontSize:"9px",fontWeight:600,color:"#475569",letterSpacing:".08em",textTransform:"uppercase"}}>Hint Pages</div>
+          <div style={{padding:"10px 13px 5px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <div style={{fontSize:"9px",fontWeight:600,color:"#475569",letterSpacing:".08em",textTransform:"uppercase"}}>Hint Pages</div>
+            <button onClick={()=>loadRef.current?.click()} title="Load .js hint page file"
+              style={{background:"none",border:"none",cursor:"pointer",color:"#475569",padding:"2px 5px",borderRadius:4,display:"flex",alignItems:"center",gap:4,fontSize:"9px",fontWeight:600,letterSpacing:".05em",textTransform:"uppercase",fontFamily:"system-ui,sans-serif"}}
+              onMouseEnter={e=>e.currentTarget.style.color="#94a3b8"} onMouseLeave={e=>e.currentTarget.style.color="#475569"}>
+              <i className="ti ti-file-import" style={{fontSize:11}}/>Load
+            </button>
+          </div>
+          <input ref={loadRef} type="file" accept=".js" style={{display:"none"}} onChange={e=>{const f=e.target.files?.[0];if(f)loadJsFile(f);e.target.value="";}}/>
+
           <div style={{flex:1,padding:"0 7px",overflowY:"auto"}} className="hs">
             {Object.values(allPages).map(p=>{const active=pgId===p.id;const isDyn=!!dynPages[p.id];return(
               <div key={p.id} style={{position:"relative",marginBottom:4}}>
@@ -326,14 +352,17 @@ QUALITY REQUIREMENTS:
                 </div>)}
               </div>
             )}
-            {/* Add button */}
-            <div style={{padding:"8px 9px"}}>
+            {/* Add / Stop button */}
+            <div style={{padding:"8px 9px",display:"flex",gap:6}}>
               <button onClick={generateHintPage}
                 disabled={genBusy}
-                style={{width:"100%",padding:"8px 12px",border:`1.5px dashed ${addOpen&&addInput.trim()?"#60a5fa":"#334155"}`,borderRadius:8,background:addOpen&&addInput.trim()?"rgba(37,99,235,.12)":"transparent",cursor:"pointer",color:addOpen&&addInput.trim()?"#60a5fa":"#475569",display:"flex",alignItems:"center",justifyContent:"center",gap:7,fontSize:"12px",fontFamily:"system-ui,sans-serif",transition:"all .2s",fontWeight:addOpen&&addInput.trim()?600:400}}>
+                style={{flex:1,padding:"8px 12px",border:`1.5px dashed ${addOpen&&addInput.trim()?"#60a5fa":"#334155"}`,borderRadius:8,background:addOpen&&addInput.trim()?"rgba(37,99,235,.12)":"transparent",cursor:"pointer",color:addOpen&&addInput.trim()?"#60a5fa":"#475569",display:"flex",alignItems:"center",justifyContent:"center",gap:7,fontSize:"12px",fontFamily:"system-ui,sans-serif",transition:"all .2s",fontWeight:addOpen&&addInput.trim()?600:400}}>
                 <i className={`ti ${genBusy?"ti-loader sp":"ti-plus"}`} style={{fontSize:13}}/>
-                {genBusy?"Generating hint page…":"+ Add Hint Page"}
+                {genBusy?"Generating…":"+ Add Hint Page"}
               </button>
+              {genBusy&&<button onClick={()=>genAbort.current?.abort()} style={{padding:"8px 10px",borderRadius:8,border:"1px solid #fca5a5",background:"#fef2f2",cursor:"pointer",color:"#dc2626",display:"flex",alignItems:"center",gap:5,fontSize:"12px",fontFamily:"system-ui,sans-serif",fontWeight:600,flexShrink:0}}>
+                <i className="ti ti-square" style={{fontSize:12}}/>Stop
+              </button>}
             </div>
           </div>
           <div style={{padding:"8px 13px",borderTop:"1px solid #1e293b"}}><div style={{fontSize:"9px",color:"#334155",lineHeight:1.5}}>Assessment: <span style={{color:"#475569"}}>{ASSESS_MODELS.find(m=>m.id===assessModel)?.label}</span><br/>HintGen: <span style={{color:"#475569"}}>{GEN_MODELS.find(m=>m.id===genModel)?.label}</span></div></div>
@@ -402,6 +431,9 @@ QUALITY REQUIREMENTS:
                 <button className="abtn" onClick={doAssess} disabled={!imgs.length||busy} style={{fontSize:"12px",padding:"6px 15px",borderRadius:8,border:"none",cursor:imgs.length&&!busy?"pointer":"not-allowed",background:imgs.length&&!busy?"#2563eb":"#e2e8f0",color:imgs.length&&!busy?"white":"#94a3b8",display:"flex",alignItems:"center",gap:6,fontWeight:600,transition:"background .15s"}}>
                   <i className={`ti ${busy?"ti-loader sp":"ti-scan"}`} style={{fontSize:13}}/>{busy?"Assessing…":"Assess"}
                 </button>
+                {busy&&<button onClick={()=>assessAbort.current?.abort()} style={{fontSize:"12px",padding:"6px 13px",borderRadius:8,border:"1px solid #fca5a5",background:"#fef2f2",cursor:"pointer",color:"#dc2626",display:"flex",alignItems:"center",gap:6,fontWeight:600}}>
+                  <i className="ti ti-square" style={{fontSize:13}}/>Stop
+                </button>}
               </div>
             </div>
             <input ref={fileRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>processFiles(e.target.files,false)}/>
