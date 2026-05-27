@@ -59,7 +59,7 @@ app.get("/api/auth/check", (req, res) => {
 app.use("/api/llm", requireAuth, createProxyMiddleware({
   target: "https://api.deepinfra.com",
   changeOrigin: true,
-  pathRewrite: { "^/api/llm": "/v1/openai" },
+  pathRewrite: (path) => `/v1/openai${path}`,
   on: {
     proxyReq: (proxyReq) => {
       proxyReq.setHeader("Authorization", `Bearer ${DEEPINFRA_API_KEY}`);
@@ -70,7 +70,7 @@ app.use("/api/llm", requireAuth, createProxyMiddleware({
 app.use("/api/cosmos", requireAuth, createProxyMiddleware({
   target: "https://aiplatform.dev51.cbf.dev.paypalinc.com",
   changeOrigin: true,
-  pathRewrite: { "^/api/cosmos": "/cosmosai/llm/v1" },
+  pathRewrite: (path) => `/cosmosai/llm/v1${path}`,
   on: {
     proxyReq: (proxyReq) => {
       proxyReq.setHeader("Authorization", `Bearer ${COSMOS_API_KEY}`);
