@@ -279,7 +279,7 @@ QUALITY REQUIREMENTS:
         setGenStreamContent,
         ctrl.signal
       );
-      const page=JSON.parse(raw.replace(/```(?:json)?\s*|\s*```/g,"").trim());
+      const s=raw.indexOf("{"),e=raw.lastIndexOf("}");if(s===-1||e===-1)throw new Error("No JSON object found in response");const page=JSON.parse(raw.slice(s,e+1));
       if(!page.id||!page.sections)throw new Error("Malformed response — missing id or sections");
       setDynPages(prev=>({...prev,[page.id]:page}));
       setPgId(page.id);setAddInput("");setAddOpen(false);setOpen({});
