@@ -1,0 +1,30 @@
+# Washington, DC Driver License / ID — Expert Forensics Briefing
+
+## Near-certain fraud indicators
+
+Any of these alone effectively confirms forgery: **document number not exactly 9 characters** (Gen 2014/2017: **1 letter + 8 digits**, typically starting **A, B, or S**; Gen 2024: literal **"DC" + 7 digits**); PDF417 barcode IIN header that is not **"636026"** (DC's AAMVA issuer code — any other value means a re-purposed out-of-state blank); coexistence of the **gold star REAL ID** mark AND **"FEDERAL LIMITS APPLY"** text (mutually exclusive); a **horizontal under-21 card** or a **vertical over-21 card** (DC strictly enforces orientation by age at issuance); **"LISENCE"** or **"LICENCE"** typos; **"X"** in the sex field (DC does **not** issue X markers on REAL ID-compliant cards).
+
+## Common forger mistakes
+
+- Name field labels missing the mandatory numeric prefix and period: genuine reads **"1. FAMILY NAME"** and **"2. GIVEN NAME(S)"** — not bare "FAMILY NAME"
+- City spelled as **"D.C."** or **"District of Columbia"** instead of literal **"WASHINGTON"**; ZIP not starting **200** or **202**
+- Eye color as **"BRN"** (DC convention is **"BRO"**), or non-AAMVA values like **"BROWN"**, **"GREY"**, foreign equivalents
+- Height/weight in metric (**"175 cm"**, **"KG"**) instead of **5' 08"** / **165 LB** format
+- Restrictions written as prose (**"CORRECTIVE LENSES"**) instead of AAMVA single-letter codes (**A, B, C**)
+- Suffix on its own labeled line — DC appends after a comma in given name (**"JOHN, JR"**)
+- Validity period other than **exactly 8 years** from issue date (standard adult DL)
+
+## Cross-field barcode traps
+
+Forgers alter the printed front but leave the PDF417 intact. Verify front-vs-barcode for: **DAQ** (document number), **DCS** (family name), **DAC** (given name), **DBB** (DOB), **DBC** (sex: **1=M, 2=F**), **DBA** (expiration), **DBD** (issue). A single mismatch is definitive tampering. Self-verifying math: the **"UNDER 21 UNTIL MM-DD-YYYY"** banner must equal **DOB + 21 years exactly** — off-by-one-day errors are signature template-editor artifacts. ZIP-to-city is also self-verifying: a DC card with a non-**200xx/202xx** ZIP is fabricated. Sex marker vs. given name vs. portrait must reconcile (**"BELINDA" + M** is a critical flag).
+
+## Generation pitfalls
+
+- **Gen 2014**: serif **"WASHINGTON, DC"** header (Times-like), **grayscale Capitol-dome ghost** in lower-right, no red government-name bar, fine-line interlocking-ring UV pattern, document number = **1 letter + 8 digits**
+- **Gen 2017**: sans-serif wider-spaced header, **red "GOVERNMENT OF THE DISTRICT OF COLUMBIA"** bar above jurisdiction name, **full-color** secondary portrait, **DC + star zigzag** UV pattern, REAL ID gold star introduced
+- **Gen 2024**: polycarbonate body with a **recessed transparent window** on the right side, smaller/repositioned 2D barcode (sometimes multiple), **tactile canting/embossing on back**, clamshell **UV ghost portrait** on front, new **"DC" + 7-digit** document number
+- Classic forgery tell: a Gen 2014 serif-font card carrying a REAL ID gold star (the star didn't exist on that template).
+
+## Visual assessment tips
+
+Genuine Gen 2017+ personalization is **laser-engraved into polycarbonate** — the surface should show subtle tactile relief over the portrait and a slightly raised feel on data lines. A glossy, perfectly smooth PVC laminate is a counterfeit indicator. Under magnification, the **red "DISTRICT OF COLUMBIA" microtext line** running horizontally across the card must resolve into discrete letters; a solid red hairline = screen-printed fake. The REAL ID **gold star must sit inside a clean white circular cutout** with sharp transparent edges — a solid gold disc with no cutout, or pixelated star edges, is a screen-print artifact. The document number should appear in a **monospaced/fixed-width font** with vertical character alignment; proportional spacing indicates template forgery. Under UV, expect a dense multi-color floral/compass-rose pattern over the back barcode area — a blank or monochrome UV back fails authentication.

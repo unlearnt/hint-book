@@ -1,0 +1,30 @@
+# Nevada Driver's License / ID — Expert Forensics Briefing
+
+## Near-certain fraud indicators
+
+Any of these alone effectively confirms forgery: **DL/ID number containing any letter** (Nevada is **exclusively 10 numeric digits** — no Soundex, no alpha prefix); **"DRIVER'S LICENSE"** with apostrophe (genuine reads **"DRIVER LICENSE"**); a **horizontal ID card** or a **vertical standard adult DL** (Nevada IDs and permits are **vertical only**, standard DLs are **horizontal**); coexistence of the gold REAL ID star AND **"NOT FOR REAL ID PURPOSES"** text (mutually exclusive); a non-PDF417 primary barcode (QR or 1D-only on back is invalid); **"X"** in the sex field (Nevada issues **M or F only** at present — non-binary marker is a fantasy-template tell).
+
+## Common forger mistakes
+
+- DL numbers using template strings like **1234567890** or **1111111111**, or formats borrowed from CA (1 letter + 7 digits)
+- Eye color spelled out ("Brown") instead of AAMVA codes: **BRO, BLU, GRN, HAZ, BLK, GRY**
+- Height in centimeters or without the **5'-08"** punctuation pattern
+- Expiration date that does **NOT** fall on the cardholder's birthday — Nevada DLs **always expire on DOB month/day**, standard term **8 years**
+- Microtext misspelled or spaced: genuine reads **"NEVADADEPARTMENTOFMOTORVEHICLES"** concatenated, no spaces, no errors
+- Generic rainbow holographic foil instead of the **shifting sagebrush + Battle Born stars** DOVID motif
+- Suffix concatenated into first name (e.g., **"JOHNSR"**) instead of properly delimited
+
+## Cross-field barcode traps
+
+Forgers alter the front but leave PDF417 untouched. Verify front-vs-barcode for: **DAQ** (10-digit DL number), **DCS** (last name), **DAC** (first name), **DBA** (expiration MM/DD/YYYY), **DBB** (DOB), **DBC** (sex: **1=M, 2=F**), **DAU** (height), **DAY** (eye color). A single mismatch is definitive tampering. Self-verifying check: under-21 red bar **"AGE 21 IN YYYY"** — the year must equal **DOB year + 21** exactly; this math error is the most common cut-and-paste artifact.
+
+## Generation pitfalls
+
+- **Gen 2017**: polycarbonate overlay on Teslin core, flat printed "NV" mark, prominent blue state silhouette background, often carries a **secondary 1D barcode** (Code 39/128) on the back as a print-log reference
+- **Gen 2021+**: full polycarbonate body, **laser-engraved tactile "NV"** in lower-left of photo area, **4-color guilloché** background, **laser-engraved grayscale portrait** fused into the plastic, secondary ghost/TLI image, dual state seal (one large color, one small laser-engraved)
+- **Gen 2023**: adds **laser-perforated state outline with "NV"** visible only when backlit
+- Red flag: a 2023-issue card with a legacy 1D barcode on back (Gen 2021+ removed it), or a 2021+ card with a printed (not laser-engraved) portrait
+
+## Visual assessment tips
+
+The genuine Gen 2021+ portrait shows **smooth, dot-free grayscale grain** and slight tactile relief — printed forgeries reveal CMYK rosette patterns under zoom. The shadow box behind the photo carries repeating microprinted **"STATE OF NEVADA"** — blurry or absent microtext indicates photocopy/inkjet reproduction. Under UV, expect a **crisp cobalt-blue state outline** overlapping the portrait plus randomly embedded **red/blue/green fluorescent fibers** in the substrate; neon-cyan splatter or printed UV "dots" indicate inkjet UV ink, not genuine secure stock. Edges of UV features should be smooth, not stair-stepped.

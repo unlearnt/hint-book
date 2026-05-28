@@ -1,15 +1,28 @@
-The highest-signal single check on any California DL/ID is barcode-to-face cross-consistency.
-A competent forger alters the printed surface but rarely synchronizes every AAMVA PDF417 field — prioritize comparing DAQ (license number) against the printed DL number, DBB (DOB) against the printed DOB, and DCS/DAC/DAD (name fields) against the printed name.
-Any one mismatch is near-certain tampering.
-Equally, the barcode header must open with '@' followed immediately by '636014' — California's AAMVA issuer identification number — before any other data; a different IIN or a QR code in place of a stacked PDF417 is disqualifying regardless of how clean the card face looks.
-The DL number is exactly eight characters: one uppercase Latin letter followed by seven digits, no spaces, hyphens, or second alpha character.
-Forgers copying formats from other states frequently produce nine characters or all-numeric strings.
-The card type label must read 'DRIVER LICENSE' — no apostrophe, no trailing 'S' — rendered in blue for a driver license and green for an identification card.
-These color and text details are persistently wrong on fakes assembled from out-of-state templates.
-Generation consistency is a structural trap.
-Gen 3 cards (through September 2025) show a Gold Rush miner at right with poppies lower left on the background, carry a magnetic strip on the back, and have a single PDF417.
-Gen 4 cards (October 2025 onward) replace that imagery with a redwood forest and Pacific coastline, remove the magnetic strip entirely, and add a second barcode on the back bearing a digital signature.
-A card combining Gen 4 scenery with a magnetic strip, or Gen 3 scenery with two barcodes, is internally incoherent — this is one of the most common failures when forgers apply a new-generation overlay to an older card body.
-For under-21 cards, the red age bar must read 'AGE 21 IN [YEAR]' where the year is arithmetically derived from the printed DOB, not copied from another card. A one-year offset — the most common synthetic-identity error — is detectable by adding 21 to the birth year and comparing. REAL ID compliance requires a gold bear silhouette with a white star inside; if that mark is absent, the text 'FEDERAL LIMITS APPLY' must appear near the top.
-Both absent simultaneously on any post-January 2018 card is a hard red flag.
-Visually, the tactile DOB numerals printed across the primary photo should appear to sit above the photo plane — in images look for the slight shadow or embossed relief that distinguishes laser engraving from a flat printed overlay. The ghost photo is grayscale and smaller, typically positioned in the upper-right area of the card face; a ghost photo that matches the primary photo's tonal range rather than appearing distinctly desaturated is a forgery indicator. Document Discriminator field DCF in the barcode must match the DD printed on the card back — forgers who edit one almost never update both.
+# California Driver License / ID — Expert Forensics Briefing
+
+## Near-certain fraud indicators
+
+Any single failure here effectively confirms forgery: **DL number not matching exactly 1 uppercase letter + 7 digits** (e.g. "A1234567"); barcode header not beginning **"@636014"** (California's AAMVA IIN); **QR code** on back instead of **PDF417**; any front-vs-barcode field mismatch; **"DRIVER'S LICENSE"** with an apostrophe (genuine label is **"DRIVER LICENSE"**, no apostrophe); an under-21 holder on a horizontal card (must be vertical/portrait).
+
+## Specific forger mistakes
+
+- Eye color as full words ("Brown") instead of AAMVA 3-letter codes: **BRN, BLU, GRN, HZL, GRY, BLK**
+- Wrong color for type text: **DL type must be BLUE; ID type must be GREEN** (2018+)
+- Dates in any format other than **MM/DD/YYYY**; ISS ≥ EXP; EXP not ~5 years after ISS
+- Names not in **UPPERCASE**, or last name not on line 1, first/middle on line 2
+- Post-Jan 2018 card missing BOTH the **gold-bear/white-star REAL ID icon** AND **"FEDERAL LIMITS APPLY"** — exactly one must appear
+- Sex field anything other than **M, F, or X**
+
+## Cross-field barcode traps
+
+Forgers routinely alter the front but neglect the PDF417. Verify these AAMVA fields against the front: **DAQ** (license number), **DCS/DAC/DAD** (last/first/middle name), **DBB** (DOB), **DBA** (expiration), **DBD** (issue), **DAU** (height), **DAY** (eye color), **DBC** (sex: **1=M, 2=F, 9=X**), **DCF** (Document Discriminator — must also match printed DD on back), and **DAJ** (state, must equal **"CA"**). A single mismatch is definitive tampering.
+
+## Generation identification
+
+- **Gen 4 (Oct 2025+)**: redwood/poppies/Pacific-coastline background, **NO magnetic strip**, **TWO barcodes on back** (second carries digital signature)
+- **Gen 3 (2018–Sep 2025)**: Gold Rush miner + poppies background, **magnetic strip present**
+- Gen 4 with a magnetic strip, or Gen 3 missing one, is a generation-mismatch red flag. REAL ID bear+star applies to both generations.
+
+## Visual security features (trickiest checks)
+
+The **DOB is laser-engraved in 3D tactile numerals across the primary photo** — flat ink-printed DOB is a strong forgery tell. **Laser-perforated bear outline** is visible only when the card is backlit. Under **UV light**, expect a **full-color ghost image of the cardholder** plus hidden patterns; absence indicates counterfeit. Holographic laminate must show **CA-themed imagery (bear, state seal)** that shifts when tilted — generic rainbow holograms indicate overlay forgery. **Microprinting** around the photo ("CA DMV" / "VALID ID") should remain crisp under magnification; blurry or dotted microprint is a print-shop counterfeit.
