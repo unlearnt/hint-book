@@ -78,7 +78,10 @@ export default function HintBookApp(){
 
   const streamSSE=async(url,body,onThink,onContent,signal)=>{
     const resp=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body,stream:true}),signal});
-    if(!resp.ok){const e=await resp.json().catch(()=>({}));throw new Error(e.error?.message||`HTTP ${resp.status}`);}
+    if(!resp.ok){
+      if(resp.status===401){window.__hbLogout?.();throw new Error("__auth__");}
+      const e=await resp.json().catch(()=>({}));throw new Error(e.error?.message||`HTTP ${resp.status}`);
+    }
     const reader=resp.body.getReader();const decoder=new TextDecoder();
     let buf="";let fullContent="";let fullThink="";
     while(true){
@@ -142,7 +145,7 @@ export default function HintBookApp(){
         ctrl.signal
       );
       setResult(JSON.parse(raw.replace(/```(?:json)?\s*|\s*```/g,"").trim()));
-    }catch(e){if(e.name!=="AbortError")setErr(e.message||"Assessment failed");}
+    }catch(e){if(e.name!=="AbortError"&&e.message!=="__auth__")setErr(e.message||"Assessment failed");}
     finally{setBusy(false);setBmsg("");assessAbort.current=null;}
   };
 
@@ -248,7 +251,7 @@ QUALITY REQUIREMENTS:
       setDynPages(prev=>({...prev,[page.id]:page}));
       setPgId(page.id);setAddInput("");setAddOpen(false);setResult(null);setImgs([]);setOpen({});
       setGenStreamThink("");setGenStreamContent("");
-    }catch(e){if(e.name!=="AbortError")setGenErr(e.message||"Generation failed. Try again.");}
+    }catch(e){if(e.name!=="AbortError"&&e.message!=="__auth__")setGenErr(e.message||"Generation failed. Try again.");}
     finally{setGenBusy(false);genAbort.current=null;}
   };
 

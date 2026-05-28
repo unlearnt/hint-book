@@ -18,6 +18,12 @@ export default function PasswordGate({ children }) {
       .finally(() => { setChecking(false); setTimeout(() => inputRef.current?.focus(), 50); });
   }, []);
 
+  // Expose a way for the app to kick back to login (e.g. after session expiry)
+  useEffect(() => {
+    window.__hbLogout = () => setAuthed(false);
+    return () => { delete window.__hbLogout; };
+  }, []);
+
   if (checking) return null;
   if (authed) return children;
 
