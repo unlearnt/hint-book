@@ -46,7 +46,13 @@ function resizeToBase64(dataUrl,mtype,maxSide=1024){
 }
 
 const lsGet=(k,fb)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):fb;}catch{return fb;}};
-const lsSet=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch(e){console.warn("localStorage save failed:",e);}};
+const lsSet=(k,v,evict)=>{
+  try{localStorage.setItem(k,JSON.stringify(v));}
+  catch(e){
+    if(evict){const trimmed=evict(v);try{localStorage.setItem(k,JSON.stringify(trimmed));}catch{localStorage.removeItem(k);}}
+    else{console.warn("localStorage save failed:",e);}
+  }
+};
 const dehydrate=store=>{const o={};for(const[id,d]of Object.entries(store)){o[id]={...d,imgs:(d.imgs||[]).map(({preview:_,...img})=>img)};}return o;};
 const hydrate=store=>{const o={};for(const[id,d]of Object.entries(store)){o[id]={...d,imgs:(d.imgs||[]).map(img=>({...img,preview:`data:${img.mtype};base64,${img.base64}`}))};}return o;};
 
@@ -121,7 +127,16 @@ export default function HintBookApp(){
   };
 
   useEffect(()=>{lsSet("hb_pgId",pgId);},[pgId]);
-  useEffect(()=>{lsSet("hb_pageStore",dehydrate(pageStore));},[pageStore]);
+  useEffect(()=>{
+    const evict=store=>{
+      // drop images from the page with the most image data until it fits
+      const trimmed={...store};
+      const bySize=Object.entries(trimmed).map(([id,d])=>[id,(d.imgs||[]).reduce((a,i)=>a+(i.base64?.length||0),0)]).sort((a,b)=>b[1]-a[1]);
+      for(const[id]of bySize){if(!trimmed[id]?.imgs?.length)continue;trimmed[id]={...trimmed[id],imgs:[]};break;}
+      return trimmed;
+    };
+    lsSet("hb_pageStore",dehydrate(pageStore),s=>evict(s));
+  },[pageStore]);
   useEffect(()=>{lsSet("hb_dynPages",dynPages);},[dynPages]);
   useEffect(()=>{lsSet("hb_settings",{assessModel,genModel,assessTemp,assessMaxTok,genTemp,genMaxTok,centerW});},[assessModel,genModel,assessTemp,assessMaxTok,genTemp,genMaxTok,centerW]);
 
