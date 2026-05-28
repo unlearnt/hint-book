@@ -220,7 +220,7 @@ export default function HintBookApp(){
         setStreamContent,
         ctrl.signal
       );
-      try{const s=raw.indexOf("{"),e=raw.lastIndexOf("}");if(s===-1||e===-1)throw new Error("No JSON object found in response");const parsed=JSON.parse(raw.slice(s,e+1));setPageStore(p=>{const d=p[pgId]||mkPage();return updTab(p,d.activeTabId,{result:parsed,model:assessModel,guidanceUsed:useGuidance&&!!THINKING[pgId]});});}
+      try{const s=raw.indexOf("{"),e=raw.lastIndexOf("}");if(s===-1||e===-1)throw new Error("No JSON object found in response");const cleaned=raw.slice(s,e+1).replace(/,(\s*[}\]])/g,"$1");const parsed=JSON.parse(cleaned);setPageStore(p=>{const d=p[pgId]||mkPage();return updTab(p,d.activeTabId,{result:parsed,model:assessModel,guidanceUsed:useGuidance&&!!THINKING[pgId]});});}
       catch(pe){throw new Error(`JSON parse error: ${pe.message}`);}
     }catch(e){if(e.name!=="AbortError"&&e.message!=="__auth__")setErr(e.message||"Assessment failed");}
     finally{setBusy(false);setBmsg("");assessAbort.current=null;}
@@ -323,7 +323,7 @@ QUALITY REQUIREMENTS:
         setGenStreamContent,
         ctrl.signal
       );
-      const s=raw.indexOf("{"),e=raw.lastIndexOf("}");if(s===-1||e===-1)throw new Error("No JSON object found in response");const page=JSON.parse(raw.slice(s,e+1));
+      const s=raw.indexOf("{"),e=raw.lastIndexOf("}");if(s===-1||e===-1)throw new Error("No JSON object found in response");const page=JSON.parse(raw.slice(s,e+1).replace(/,(\s*[}\]])/g,"$1"));
       if(!page.id||!page.sections)throw new Error("Malformed response — missing id or sections");
       setDynPages(prev=>({...prev,[page.id]:page}));
       setPgId(page.id);setAddInput("");setAddOpen(false);setOpen({});
