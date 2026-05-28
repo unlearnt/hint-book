@@ -4,6 +4,7 @@ import PAGES from "./hints/index.js";
 
 const ASSESS_MODELS=[
   {id:"Qwen/Qwen3-VL-30B-A3B-Instruct",label:"Qwen3-VL-30B-A3B-Instruct"},
+  {id:"Qwen/Qwen3-VL-30B-A3B-Thinking",label:"Qwen3-VL-30B-A3B-Thinking"},
   {id:"Qwen/Qwen3-VL-235B-A22B-Instruct",label:"Qwen3-VL-235B-A22B-Instruct"},
   {id:"google/gemma-4-31B-it",label:"Gemma 4 31B"},
   {id:"moonshotai/Kimi-K2.6",label:"Kimi K2.6"},
@@ -14,7 +15,7 @@ const ASSESS_MODELS=[
 const GEN_MODELS=[
   {id:"deepseek-ai/DeepSeek-V4-Pro",label:"DeepSeek V4 Pro"},
   {id:"deepseek-ai/DeepSeek-R1",label:"DeepSeek R1"},
-  {id:"Qwen/Qwen3-235B-A22B",label:"Qwen3 235B"},
+  {id:"Qwen/Qwen3-235B-A22B",label:"Qwen3-235B-A22B"},
 ];
 
 const AC=a=>({YES:"#16a34a",NO:"#dc2626",WARN:"#d97706",CONTEXT:"#2563eb",UNVERIFIABLE:"#6b7280"})[a]||"#6b7280";
