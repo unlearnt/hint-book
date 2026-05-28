@@ -63,6 +63,7 @@ export default function HintBookApp(){
   const[pageStore,setPageStore]=useState(()=>hydrate(lsGet("hb_pageStore",{})));
   const[busy,setBusy]=useState(false);
   const[bmsg,setBmsg]=useState("");
+  const[lightbox,setLightbox]=useState(null);
   const[centerW,setCenterW]=useState(()=>lsGet("hb_settings",{}).centerW||260);
   const[dynPages,setDynPages]=useState(()=>lsGet("hb_dynPages",{}));
   const[addOpen,setAddOpen]=useState(false);
@@ -144,8 +145,9 @@ export default function HintBookApp(){
   useEffect(()=>{
     const onMove=e=>{if(!dragging.current)return;const d=e.clientX-dragX.current;setCenterW(Math.max(180,Math.min(520,dragW.current+d)));};
     const onUp=()=>{dragging.current=false;document.body.style.cursor="";document.body.style.userSelect="";};
-    window.addEventListener("mousemove",onMove);window.addEventListener("mouseup",onUp);
-    return()=>{window.removeEventListener("mousemove",onMove);window.removeEventListener("mouseup",onUp);};
+    const onKey=e=>{if(e.key==="Escape")setLightbox(null);};
+    window.addEventListener("mousemove",onMove);window.addEventListener("mouseup",onUp);window.addEventListener("keydown",onKey);
+    return()=>{window.removeEventListener("mousemove",onMove);window.removeEventListener("mouseup",onUp);window.removeEventListener("keydown",onKey);};
   },[]);
   const onDivDown=e=>{dragging.current=true;dragX.current=e.clientX;dragW.current=centerW;document.body.style.cursor="col-resize";document.body.style.userSelect="none";e.preventDefault();};
 
@@ -514,7 +516,7 @@ QUALITY REQUIREMENTS:
                 <div style={{display:"flex",gap:12,height:"100%"}}>
                   {imgs.map((img,i)=>(
                     <div key={i} style={{flex:1,position:"relative",background:"#f8fafc",borderRadius:10,border:"1px solid #e2e8f0",overflow:"hidden",display:"flex",flexDirection:"column"}}>
-                      <div style={{flex:1,minHeight:0,display:"flex",alignItems:"center",justifyContent:"center",padding:"8px",background:"#f8fafc"}}>
+                      <div onClick={()=>setLightbox(img.preview)} style={{flex:1,minHeight:0,display:"flex",alignItems:"center",justifyContent:"center",padding:"8px",background:"#f8fafc",cursor:"zoom-in"}}>
                         <img src={img.preview} alt={`doc${i+1}`} style={{maxWidth:"100%",maxHeight:"100%",width:"auto",height:"auto",objectFit:"contain",display:"block",borderRadius:6,boxShadow:"0 1px 6px rgba(0,0,0,.12)"}}/>
                       </div>
                       <div style={{flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 10px",background:"#f1f5f9",borderTop:"1px solid #e2e8f0"}}>
@@ -584,6 +586,14 @@ QUALITY REQUIREMENTS:
           </div>
         </div>
       </div>
+      {lightbox&&(
+        <div onClick={()=>setLightbox(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.85)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",cursor:"zoom-out"}}>
+          <img src={lightbox} onClick={e=>e.stopPropagation()} style={{maxWidth:"90vw",maxHeight:"90vh",objectFit:"contain",borderRadius:8,boxShadow:"0 8px 48px rgba(0,0,0,.6)"}}/>
+          <button onClick={()=>setLightbox(null)} style={{position:"absolute",top:16,right:16,background:"rgba(255,255,255,.15)",border:"none",borderRadius:"50%",width:36,height:36,cursor:"pointer",color:"white",display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <i className="ti ti-x" style={{fontSize:16}}/>
+          </button>
+        </div>
+      )}
     </>
   );
 }
