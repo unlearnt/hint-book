@@ -54,8 +54,17 @@ const lsSet=(k,v,evict)=>{
     else{console.warn("localStorage save failed:",e);}
   }
 };
-const dehydrate=store=>{const o={};for(const[id,d]of Object.entries(store)){o[id]={...d,imgs:(d.imgs||[]).map(({preview:_,...img})=>img)};}return o;};
-const hydrate=store=>{const o={};for(const[id,d]of Object.entries(store)){o[id]={...d,imgs:(d.imgs||[]).map(img=>({...img,preview:`data:${img.mtype};base64,${img.base64}`}))};}return o;};
+const mkPage=()=>({tabs:[{id:"t1",label:"Test 1",imgs:[],result:null,err:null}],activeTabId:"t1"});
+const dehydrate=store=>{const o={};for(const[id,d]of Object.entries(store)){o[id]={...d,tabs:(d.tabs||[]).map(tab=>({...tab,imgs:(tab.imgs||[]).map(({preview:_,...img})=>img)}))};delete o[id].imgs;delete o[id].result;delete o[id].err;}return o;};
+const hydrate=store=>{
+  const o={};
+  for(const[id,d]of Object.entries(store)){
+    // migrate old flat format {imgs,result,err} → tabs
+    const tabs=d.tabs||[{id:"t1",label:"Test 1",imgs:d.imgs||[],result:d.result||null,err:d.err||null}];
+    o[id]={tabs:tabs.map(tab=>({...tab,imgs:(tab.imgs||[]).map(img=>({...img,preview:`data:${img.mtype};base64,${img.base64}`}))})),activeTabId:d.activeTabId||tabs[0]?.id||"t1"};
+  }
+  return o;
+};
 
 export default function HintBookApp(){
   const[pgId,setPgId]=useState(()=>lsGet("hb_pgId","ca_dl"));
@@ -84,10 +93,24 @@ export default function HintBookApp(){
   const addInputRef=useRef();const leaveTimer=useRef();const addPanelRef=useRef();
   const dragging=useRef(false);const dragX=useRef(0);const dragW=useRef(0);
   const assessAbort=useRef(null);const genAbort=useRef(null);
-  const{imgs=[],result=null,err=null}=pageStore[pgId]||{};
-  const setImgs=v=>setPageStore(p=>{const c=p[pgId]||{};return{...p,[pgId]:{...c,imgs:typeof v==="function"?v(c.imgs||[]):v}};});
-  const setResult=v=>setPageStore(p=>({...p,[pgId]:{...(p[pgId]||{}),result:v}}));
-  const setErr=v=>setPageStore(p=>({...p,[pgId]:{...(p[pgId]||{}),err:v}}));
+  const pgData=pageStore[pgId]||mkPage();
+  const{tabs,activeTabId}=pgData;
+  const activeTab=tabs.find(t=>t.id===activeTabId)||tabs[0]||{};
+  const{imgs=[],result=null,err=null}=activeTab;
+  const updTab=(p,tid,patch)=>{const d=p[pgId]||mkPage();return{...p,[pgId]:{...d,tabs:d.tabs.map(t=>t.id!==tid?t:{...t,...patch})}};};
+  const setImgs=v=>setPageStore(p=>{const d=p[pgId]||mkPage();const tid=d.activeTabId;return updTab(p,tid,{imgs:typeof v==="function"?v((d.tabs.find(t=>t.id===tid)||{}).imgs||[]):v});});
+  const setResult=v=>setPageStore(p=>{const d=p[pgId]||mkPage();return updTab(p,d.activeTabId,{result:v});});
+  const setErr=v=>setPageStore(p=>{const d=p[pgId]||mkPage();return updTab(p,d.activeTabId,{err:v});});
+  const setActiveTab=id=>setPageStore(p=>({...p,[pgId]:{...(p[pgId]||mkPage()),activeTabId:id}}));
+  const addTab=()=>{
+    if(tabs.length>=5)return;
+    const id="t"+Date.now();const label="Test "+(tabs.length+1);
+    setPageStore(p=>{const d=p[pgId]||mkPage();return{...p,[pgId]:{tabs:[...d.tabs,{id,label,imgs:[],result:null,err:null}],activeTabId:id}};});
+  };
+  const removeTab=id=>{
+    if(tabs.length<=1)return;
+    setPageStore(p=>{const d=p[pgId]||mkPage();const nt=d.tabs.filter(t=>t.id!==id);const na=d.activeTabId===id?nt[Math.max(0,d.tabs.findIndex(t=>t.id===id)-1)].id:d.activeTabId;return{...p,[pgId]:{tabs:nt,activeTabId:na}};});
+  };
   const allPages={...PAGES,...dynPages};
   const pg=allPages[pgId]||Object.values(allPages)[0];
   const total=pg.sections.reduce((a,s)=>a+s.hints.length,0);
@@ -131,10 +154,10 @@ export default function HintBookApp(){
   useEffect(()=>{lsSet("hb_pgId",pgId);},[pgId]);
   useEffect(()=>{
     const evict=store=>{
-      // drop images from the page with the most image data until it fits
       const trimmed={...store};
-      const bySize=Object.entries(trimmed).map(([id,d])=>[id,(d.imgs||[]).reduce((a,i)=>a+(i.base64?.length||0),0)]).sort((a,b)=>b[1]-a[1]);
-      for(const[id]of bySize){if(!trimmed[id]?.imgs?.length)continue;trimmed[id]={...trimmed[id],imgs:[]};break;}
+      let maxSize=0,maxPg=null,maxTab=null;
+      for(const[pid,d]of Object.entries(trimmed)){for(const tab of(d.tabs||[])){const sz=(tab.imgs||[]).reduce((a,i)=>a+(i.base64?.length||0),0);if(sz>maxSize){maxSize=sz;maxPg=pid;maxTab=tab.id;}}}
+      if(maxPg&&maxTab){const d=trimmed[maxPg];trimmed[maxPg]={...d,tabs:d.tabs.map(t=>t.id!==maxTab?t:{...t,imgs:[]})};}
       return trimmed;
     };
     lsSet("hb_pageStore",dehydrate(pageStore),s=>evict(s));
@@ -505,6 +528,28 @@ QUALITY REQUIREMENTS:
             </div>
             <input ref={fileRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>processFiles(e.target.files,false)}/>
             <input ref={addRef} type="file" accept="image/*" style={{display:"none"}} onChange={e=>processFiles(e.target.files,true)}/>
+            {/* Tab bar */}
+            <div style={{display:"flex",alignItems:"center",gap:2,marginBottom:10,borderBottom:"1px solid #e2e8f0",paddingBottom:0}}>
+              {tabs.map(tab=>{const active=tab.id===activeTabId;return(
+                <div key={tab.id} style={{position:"relative",display:"flex",alignItems:"center"}}>
+                  <button onClick={()=>setActiveTab(tab.id)} disabled={busy}
+                    style={{padding:"5px 10px",fontSize:"11px",fontWeight:active?600:400,color:active?"#0f172a":"#94a3b8",background:"none",border:"none",borderBottom:active?"2px solid #2563eb":"2px solid transparent",cursor:"pointer",whiteSpace:"nowrap",fontFamily:"system-ui,sans-serif",marginBottom:-1,transition:"color .1s",paddingRight:tabs.length>1?"24px":"10px"}}>
+                    {tab.label}
+                    {tab.result&&<span style={{marginLeft:5,fontSize:"9px",padding:"1px 5px",borderRadius:999,fontWeight:700,background:tab.result.verdict==="APPEARS_LEGITIMATE"?"#dcfce7":tab.result.verdict==="CANNOT_DETERMINE"?"#f1f5f9":"#fee2e2",color:tab.result.verdict==="APPEARS_LEGITIMATE"?"#15803d":tab.result.verdict==="CANNOT_DETERMINE"?"#64748b":"#dc2626"}}>{tab.result.verdict==="APPEARS_LEGITIMATE"?"✓":tab.result.verdict==="CANNOT_DETERMINE"?"?":"!"}</span>}
+                  </button>
+                  {tabs.length>1&&<button onClick={()=>removeTab(tab.id)} disabled={busy}
+                    style={{position:"absolute",right:2,top:"50%",transform:"translateY(-50%) translateY(-1px)",background:"none",border:"none",cursor:"pointer",color:"#cbd5e1",padding:"1px 2px",lineHeight:1,fontSize:11,display:"flex",alignItems:"center"}}
+                    onMouseEnter={e=>e.currentTarget.style.color="#94a3b8"} onMouseLeave={e=>e.currentTarget.style.color="#cbd5e1"}>
+                    <i className="ti ti-x" style={{fontSize:9}}/>
+                  </button>}
+                </div>
+              );})}
+              {tabs.length<5&&<button onClick={addTab} disabled={busy}
+                style={{padding:"4px 8px",fontSize:"11px",color:"#94a3b8",background:"none",border:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:3,fontFamily:"system-ui,sans-serif",marginBottom:1}}
+                onMouseEnter={e=>e.currentTarget.style.color="#475569"} onMouseLeave={e=>e.currentTarget.style.color="#94a3b8"}>
+                <i className="ti ti-plus" style={{fontSize:11}}/>
+              </button>}
+            </div>
             <div style={{height:"174px",flexShrink:0}}>
               {imgs.length===0?(
                 <div className="dropz" onClick={()=>fileRef.current?.click()} onDrop={e=>{e.preventDefault();processFiles(e.dataTransfer.files,false);}} onDragOver={e=>e.preventDefault()}
