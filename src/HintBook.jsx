@@ -58,6 +58,8 @@ export default function HintBookApp(){
   const[genErr,setGenErr]=useState(null);
   const[assessModel,setAssessModel]=useState(ASSESS_MODELS[0].id);
   const[genModel,setGenModel]=useState(GEN_MODELS[0].id);
+  const[assessTemp,setAssessTemp]=useState(0.1);
+  const[genTemp,setGenTemp]=useState(0.4);
   const[streamThink,setStreamThink]=useState("");
   const[streamContent,setStreamContent]=useState("");
   const[genStreamThink,setGenStreamThink]=useState("");
@@ -131,7 +133,7 @@ export default function HintBookApp(){
       const qs=pg.sections.map(s=>`[${s.id}] ${s.title}\n`+s.hints.map(h=>`  ${h[0]} (expect:${h[3]}): ${h[1]}${h[2]?` [${h[2]}]`:""}`).join("\n")).join("\n\n");
       const raw=await streamSSE(
         "/api/llm/chat/completions",
-        {model:assessModel,max_tokens:4096,messages:[{role:"user",content:[
+        {model:assessModel,temperature:assessTemp,max_tokens:4096,messages:[{role:"user",content:[
           ...imgs.map(img=>({type:"image_url",image_url:{url:img.preview}})),
           {type:"text",text:`You are an expert document fraud detection AI. Analyze the provided image(s) of a "${pg.title}" document against this checklist.\n\nAnswer: YES (confirmed), NO (anomaly/red flag), WARN (borderline), UNVERIFIABLE (can't determine from image), CONTEXT (generation-dependent — describe what you observe).\ncriticalFails = (NO where expect=YES) + (YES where expect=NO). warnings = WARN count. passes = correct YES/NO answers. unverifiable = UNVERIFIABLE + CONTEXT count.\nProvide a 1-sentence finding per check.\n\nCHECKLIST:\n${qs}\n\nReturn ONLY valid JSON, no markdown fences:\n{"verdict":"HIGHLY_SUSPICIOUS|SUSPICIOUS|APPEARS_LEGITIMATE|CANNOT_DETERMINE","summary":"2-3 sentence assessment naming specific anomalies","criticalFails":0,"warnings":0,"passes":0,"unverifiable":0,"sections":[{"id":"","title":"","checks":[{"id":"","answer":"YES|NO|WARN|UNVERIFIABLE|CONTEXT","finding":"1 sentence"}]}]}`}
         ]}]},
@@ -236,7 +238,7 @@ QUALITY REQUIREMENTS:
     try{
       const raw=await streamSSE(
         "/api/llm/chat/completions",
-        {model:genModel,max_tokens:6000,messages:[{role:"user",content:HINTBOOK_PROMPT(addInput.trim())}]},
+        {model:genModel,temperature:genTemp,max_tokens:6000,messages:[{role:"user",content:HINTBOOK_PROMPT(addInput.trim())}]},
         setGenStreamThink,
         setGenStreamContent,
         ctrl.signal
@@ -301,7 +303,7 @@ QUALITY REQUIREMENTS:
           <div style={{flex:1,padding:"0 7px",overflowY:"auto"}} className="hs">
             {Object.values(allPages).map(p=>{const active=pgId===p.id;const isDyn=!!dynPages[p.id];return(
               <div key={p.id} style={{position:"relative",marginBottom:4}}>
-                <button className="pgbtn" onClick={()=>{setPgId(p.id);setResult(null);setImgs([]);setErr(null);setOpen({});}}
+                <button className="pgbtn" onClick={()=>{setPgId(p.id);setResult(null);setErr(null);setOpen({});}}
                   style={{display:"block",width:"100%",padding:"10px 10px",border:"none",borderRadius:8,cursor:"pointer",textAlign:"left",background:active?"rgba(37,99,235,.15)":"transparent",outline:active?`1.5px solid ${p.color}`:"none",outlineOffset:"-1.5px",transition:"background .12s"}}>
                   <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:4}}><div style={{width:8,height:8,borderRadius:"50%",background:active?p.color:"#334155",flexShrink:0,transition:"background .12s"}}/><span style={{fontSize:"11px",fontWeight:600,color:active?"white":"#94a3b8",lineHeight:1.3}}>{p.title}</span>{isDyn&&<span style={{fontSize:"8px",background:"rgba(37,99,235,.25)",color:"#60a5fa",borderRadius:3,padding:"1px 4px",marginLeft:"auto",flexShrink:0}}>GEN</span>}</div>
                   <div style={{fontSize:"10px",color:"#475569",lineHeight:1.4,paddingLeft:15}}>{p.subtitle}</div>
@@ -317,13 +319,21 @@ QUALITY REQUIREMENTS:
           <div ref={addPanelRef} onMouseEnter={openAdd} onMouseLeave={closeAdd}
             style={{borderTop:"1px solid #1e293b",flexShrink:0}}>
             {/* Sliding input panel */}
-            <div style={{maxHeight:addOpen?"130px":"0px",overflow:"hidden",transition:"max-height .22s ease-out"}}>
+            <div style={{maxHeight:addOpen?"160px":"0px",overflow:"hidden",transition:"max-height .22s ease-out"}}>
               <div style={{padding:"10px 9px 6px"}}>
                 <div style={{fontSize:"9px",fontWeight:600,color:"#475569",letterSpacing:".06em",textTransform:"uppercase",marginBottom:6}}>Model</div>
-                <select value={genModel} onChange={e=>setGenModel(e.target.value)} disabled={genBusy}
-                  style={{width:"100%",fontSize:"11px",padding:"6px 8px",borderRadius:6,border:"1px solid #334155",background:"#1e293b",color:"#94a3b8",outline:"none",fontFamily:"system-ui,sans-serif",marginBottom:8,cursor:"pointer"}}>
-                  {GEN_MODELS.map(m=><option key={m.id} value={m.id}>{m.label}</option>)}
-                </select>
+                <div style={{display:"flex",gap:6,marginBottom:8,alignItems:"center"}}>
+                  <select value={genModel} onChange={e=>setGenModel(e.target.value)} disabled={genBusy}
+                    style={{flex:1,fontSize:"11px",padding:"6px 8px",borderRadius:6,border:"1px solid #334155",background:"#1e293b",color:"#94a3b8",outline:"none",fontFamily:"system-ui,sans-serif",cursor:"pointer"}}>
+                    {GEN_MODELS.map(m=><option key={m.id} value={m.id}>{m.label}</option>)}
+                  </select>
+                  <div style={{display:"flex",alignItems:"center",gap:4,padding:"5px 8px",borderRadius:6,border:"1px solid #334155",background:"#1e293b",flexShrink:0}}>
+                    <span style={{fontSize:"9px",color:"#475569",userSelect:"none"}}>Temp</span>
+                    <input type="number" min="0" max="2" step="0.05" value={genTemp} disabled={genBusy}
+                      onChange={e=>{const v=parseFloat(e.target.value);if(!isNaN(v))setGenTemp(Math.min(2,Math.max(0,v)));}}
+                      style={{width:32,fontSize:"11px",border:"none",outline:"none",color:"#94a3b8",fontFamily:"system-ui,sans-serif",textAlign:"center",padding:0,background:"transparent"}}/>
+                  </div>
+                </div>
                 <div style={{fontSize:"9px",fontWeight:600,color:"#475569",letterSpacing:".06em",textTransform:"uppercase",marginBottom:6}}>Document type to add</div>
                 <input ref={addInputRef} value={addInput}
                   onChange={e=>{setAddInput(e.target.value);setGenErr(null);}}
@@ -427,6 +437,12 @@ QUALITY REQUIREMENTS:
                   style={{fontSize:"11px",padding:"5px 8px",borderRadius:7,border:"1px solid #e2e8f0",background:"white",color:"#334155",cursor:"pointer",outline:"none",fontFamily:"system-ui,sans-serif"}}>
                   {ASSESS_MODELS.map(m=><option key={m.id} value={m.id}>{m.label}</option>)}
                 </select>
+                <div style={{display:"flex",alignItems:"center",gap:4,padding:"4px 8px",borderRadius:7,border:"1px solid #e2e8f0",background:"white",height:28,boxSizing:"border-box"}}>
+                  <span style={{fontSize:"10px",color:"#94a3b8",userSelect:"none"}}>Temp</span>
+                  <input type="number" min="0" max="2" step="0.05" value={assessTemp} disabled={busy}
+                    onChange={e=>{const v=parseFloat(e.target.value);if(!isNaN(v))setAssessTemp(Math.min(2,Math.max(0,v)));}}
+                    style={{width:36,fontSize:"11px",border:"none",outline:"none",color:"#334155",fontFamily:"system-ui,sans-serif",textAlign:"center",padding:0,background:"transparent"}}/>
+                </div>
                 <button className="upbtn" onClick={()=>fileRef.current?.click()} style={{fontSize:"12px",padding:"6px 13px",borderRadius:8,border:"1px solid #e2e8f0",background:"white",cursor:"pointer",color:"#334155",display:"flex",alignItems:"center",gap:6,fontWeight:500,transition:"background .1s"}}><i className="ti ti-upload" style={{fontSize:13}}/>Upload</button>
                 <button className="abtn" onClick={doAssess} disabled={!imgs.length||busy} style={{fontSize:"12px",padding:"6px 15px",borderRadius:8,border:"none",cursor:imgs.length&&!busy?"pointer":"not-allowed",background:imgs.length&&!busy?"#2563eb":"#e2e8f0",color:imgs.length&&!busy?"white":"#94a3b8",display:"flex",alignItems:"center",gap:6,fontWeight:600,transition:"background .15s"}}>
                   <i className={`ti ${busy?"ti-loader sp":"ti-scan"}`} style={{fontSize:13}}/>{busy?"Assessing…":"Assess"}
