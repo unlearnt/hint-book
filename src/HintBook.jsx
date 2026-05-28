@@ -87,6 +87,7 @@ export default function HintBookApp(){
   const[assessMaxTok,setAssessMaxTok]=useState(()=>lsGet("hb_settings",{}).assessMaxTok||8192);
   const[genTemp,setGenTemp]=useState(()=>lsGet("hb_settings",{}).genTemp??0.4);
   const[genMaxTok,setGenMaxTok]=useState(()=>lsGet("hb_settings",{}).genMaxTok||8192);
+  const[useGuidance,setUseGuidance]=useState(()=>lsGet("hb_settings",{}).useGuidance??true);
   const[streamThink,setStreamThink]=useState("");
   const[streamContent,setStreamContent]=useState("");
   const[genStreamThink,setGenStreamThink]=useState("");
@@ -174,7 +175,7 @@ export default function HintBookApp(){
     lsSet("hb_pageStore",dehydrate(pageStore),s=>evict(s));
   },[pageStore]);
   useEffect(()=>{lsSet("hb_dynPages",dynPages);},[dynPages]);
-  useEffect(()=>{lsSet("hb_settings",{assessModel,genModel,assessTemp,assessMaxTok,genTemp,genMaxTok,centerW});},[assessModel,genModel,assessTemp,assessMaxTok,genTemp,genMaxTok,centerW]);
+  useEffect(()=>{lsSet("hb_settings",{assessModel,genModel,assessTemp,assessMaxTok,genTemp,genMaxTok,centerW,useGuidance});},[assessModel,genModel,assessTemp,assessMaxTok,genTemp,genMaxTok,centerW,useGuidance]);
 
   useEffect(()=>{
     const onMove=e=>{if(!dragging.current)return;const d=e.clientX-dragX.current;setCenterW(Math.max(180,Math.min(520,dragW.current+d)));};
@@ -208,7 +209,7 @@ export default function HintBookApp(){
     setBusy(true);setErr(null);setResult(null);setStreamThink("");setStreamContent("");
     try{
       const qs=pg.sections.map(s=>`[${s.id}] ${s.title}\n`+s.hints.map(h=>`  ${h[0]} (expect:${h[3]}): ${h[1]}${h[2]?` [${h[2]}]`:""}`).join("\n")).join("\n\n");
-      const pageThinking=THINKING[pgId]||"";
+      const pageThinking=useGuidance&&THINKING[pgId]?THINKING[pgId]:"";
       const raw=await streamSSE(
         "/api/llm/chat/completions",
         {model:assessModel,temperature:assessTemp,max_tokens:assessMaxTok,messages:[{role:"user",content:[
@@ -479,7 +480,12 @@ QUALITY REQUIREMENTS:
           <div style={{padding:"12px 14px",borderBottom:"1px solid #e2e8f0",background:"white",flexShrink:0}}>
             <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3}}><div style={{width:9,height:9,borderRadius:"50%",background:pg.color}}/><span style={{fontSize:"13px",fontWeight:700,color:"#0f172a"}}>{pg.title}</span></div>
             <div style={{fontSize:"11px",color:"#64748b",marginBottom:THINKING[pgId]?5:9}}>{pg.subtitle}</div>
-            {THINKING[pgId]&&<button onClick={()=>setShowThinking(true)} style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:"9px",fontWeight:600,color:"#7c3aed",background:"#f5f3ff",border:"1px solid #ddd6fe",borderRadius:5,padding:"2px 7px",marginBottom:9,cursor:"pointer",fontFamily:"system-ui,sans-serif"}} onMouseEnter={e=>{e.currentTarget.style.background="#ede9fe";}} onMouseLeave={e=>{e.currentTarget.style.background="#f5f3ff";}}><i className="ti ti-brain" style={{fontSize:10}}/>Expert guidance loaded</button>}
+            {THINKING[pgId]&&<div style={{display:"flex",alignItems:"center",gap:6,marginBottom:9}}>
+              <button onClick={()=>setShowThinking(true)} style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:"9px",fontWeight:600,color:useGuidance?"#7c3aed":"#94a3b8",background:useGuidance?"#f5f3ff":"#f8fafc",border:`1px solid ${useGuidance?"#ddd6fe":"#e2e8f0"}`,borderRadius:5,padding:"2px 7px",cursor:"pointer",fontFamily:"system-ui,sans-serif",transition:"all .15s"}} onMouseEnter={e=>{e.currentTarget.style.background=useGuidance?"#ede9fe":"#f1f5f9";}} onMouseLeave={e=>{e.currentTarget.style.background=useGuidance?"#f5f3ff":"#f8fafc";}}><i className="ti ti-brain" style={{fontSize:10}}/>Expert guidance{useGuidance?"":" (off)"}</button>
+              <button onClick={()=>setUseGuidance(v=>!v)} style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:"9px",fontWeight:600,color:useGuidance?"#16a34a":"#94a3b8",background:"none",border:"none",cursor:"pointer",fontFamily:"system-ui,sans-serif",padding:"2px 4px"}} title={useGuidance?"Disable expert guidance":"Enable expert guidance"}>
+                <i className={`ti ${useGuidance?"ti-toggle-right":"ti-toggle-left"}`} style={{fontSize:16}}/>
+              </button>
+            </div>}
             <div style={{display:"flex",gap:6}}><button onClick={allOpen} style={{flex:1,fontSize:"11px",padding:"4px 0",border:"1px solid #e2e8f0",borderRadius:6,background:"white",cursor:"pointer",color:"#475569"}}>Expand all</button><button onClick={allClose} style={{flex:1,fontSize:"11px",padding:"4px 0",border:"1px solid #e2e8f0",borderRadius:6,background:"white",cursor:"pointer",color:"#475569"}}>Collapse</button></div>
           </div>
           <div className="cs" style={{flex:1,overflowY:"auto",padding:"8px"}}>
