@@ -45,24 +45,29 @@ function resizeToBase64(dataUrl,mtype,maxSide=1024){
   });
 }
 
+const lsGet=(k,fb)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):fb;}catch{return fb;}};
+const lsSet=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch(e){console.warn("localStorage save failed:",e);}};
+const dehydrate=store=>{const o={};for(const[id,d]of Object.entries(store)){o[id]={...d,imgs:(d.imgs||[]).map(({preview:_,...img})=>img)};}return o;};
+const hydrate=store=>{const o={};for(const[id,d]of Object.entries(store)){o[id]={...d,imgs:(d.imgs||[]).map(img=>({...img,preview:`data:${img.mtype};base64,${img.base64}`}))};}return o;};
+
 export default function HintBookApp(){
-  const[pgId,setPgId]=useState("ca_dl");
+  const[pgId,setPgId]=useState(()=>lsGet("hb_pgId","ca_dl"));
   const[open,setOpen]=useState({});
-  const[pageStore,setPageStore]=useState({});
+  const[pageStore,setPageStore]=useState(()=>hydrate(lsGet("hb_pageStore",{})));
   const[busy,setBusy]=useState(false);
   const[bmsg,setBmsg]=useState("");
-  const[centerW,setCenterW]=useState(260);
-  const[dynPages,setDynPages]=useState({});
+  const[centerW,setCenterW]=useState(()=>lsGet("hb_settings",{}).centerW||260);
+  const[dynPages,setDynPages]=useState(()=>lsGet("hb_dynPages",{}));
   const[addOpen,setAddOpen]=useState(false);
   const[addInput,setAddInput]=useState("");
   const[genBusy,setGenBusy]=useState(false);
   const[genErr,setGenErr]=useState(null);
-  const[assessModel,setAssessModel]=useState(ASSESS_MODELS[0].id);
-  const[genModel,setGenModel]=useState(GEN_MODELS[0].id);
-  const[assessTemp,setAssessTemp]=useState(0.1);
-  const[assessMaxTok,setAssessMaxTok]=useState(8192);
-  const[genTemp,setGenTemp]=useState(0.4);
-  const[genMaxTok,setGenMaxTok]=useState(8192);
+  const[assessModel,setAssessModel]=useState(()=>lsGet("hb_settings",{}).assessModel||ASSESS_MODELS[0].id);
+  const[genModel,setGenModel]=useState(()=>lsGet("hb_settings",{}).genModel||GEN_MODELS[0].id);
+  const[assessTemp,setAssessTemp]=useState(()=>lsGet("hb_settings",{}).assessTemp??0.1);
+  const[assessMaxTok,setAssessMaxTok]=useState(()=>lsGet("hb_settings",{}).assessMaxTok||8192);
+  const[genTemp,setGenTemp]=useState(()=>lsGet("hb_settings",{}).genTemp??0.4);
+  const[genMaxTok,setGenMaxTok]=useState(()=>lsGet("hb_settings",{}).genMaxTok||8192);
   const[streamThink,setStreamThink]=useState("");
   const[streamContent,setStreamContent]=useState("");
   const[genStreamThink,setGenStreamThink]=useState("");
@@ -114,6 +119,11 @@ export default function HintBookApp(){
     a.href=URL.createObjectURL(new Blob([js],{type:"text/javascript"}));
     a.download=`${p.id}.js`;a.click();
   };
+
+  useEffect(()=>{lsSet("hb_pgId",pgId);},[pgId]);
+  useEffect(()=>{lsSet("hb_pageStore",dehydrate(pageStore));},[pageStore]);
+  useEffect(()=>{lsSet("hb_dynPages",dynPages);},[dynPages]);
+  useEffect(()=>{lsSet("hb_settings",{assessModel,genModel,assessTemp,assessMaxTok,genTemp,genMaxTok,centerW});},[assessModel,genModel,assessTemp,assessMaxTok,genTemp,genMaxTok,centerW]);
 
   useEffect(()=>{
     const onMove=e=>{if(!dragging.current)return;const d=e.clientX-dragX.current;setCenterW(Math.max(180,Math.min(520,dragW.current+d)));};
