@@ -59,6 +59,7 @@ export default function HintBookApp(){
   const[assessModel,setAssessModel]=useState(ASSESS_MODELS[0].id);
   const[genModel,setGenModel]=useState(GEN_MODELS[0].id);
   const[assessTemp,setAssessTemp]=useState(0.1);
+  const[assessMaxTok,setAssessMaxTok]=useState(8192);
   const[genTemp,setGenTemp]=useState(0.4);
   const[streamThink,setStreamThink]=useState("");
   const[streamContent,setStreamContent]=useState("");
@@ -136,7 +137,7 @@ export default function HintBookApp(){
       const qs=pg.sections.map(s=>`[${s.id}] ${s.title}\n`+s.hints.map(h=>`  ${h[0]} (expect:${h[3]}): ${h[1]}${h[2]?` [${h[2]}]`:""}`).join("\n")).join("\n\n");
       const raw=await streamSSE(
         "/api/llm/chat/completions",
-        {model:assessModel,temperature:assessTemp,max_tokens:4096,messages:[{role:"user",content:[
+        {model:assessModel,temperature:assessTemp,max_tokens:assessMaxTok,messages:[{role:"user",content:[
           ...imgs.map(img=>({type:"image_url",image_url:{url:img.preview}})),
           {type:"text",text:`You are an expert document fraud detection AI. Analyze the provided image(s) of a "${pg.title}" document against this checklist.\n\nAnswer: YES (confirmed), NO (anomaly/red flag), WARN (borderline), UNVERIFIABLE (can't determine from image), CONTEXT (generation-dependent — describe what you observe).\ncriticalFails = (NO where expect=YES) + (YES where expect=NO). warnings = WARN count. passes = correct YES/NO answers. unverifiable = UNVERIFIABLE + CONTEXT count.\nProvide a 1-sentence finding per check.\n\nCHECKLIST:\n${qs}\n\nReturn ONLY valid JSON, no markdown fences:\n{"verdict":"HIGHLY_SUSPICIOUS|SUSPICIOUS|APPEARS_LEGITIMATE|CANNOT_DETERMINE","summary":"2-3 sentence assessment naming specific anomalies","criticalFails":0,"warnings":0,"passes":0,"unverifiable":0,"sections":[{"id":"","title":"","checks":[{"id":"","answer":"YES|NO|WARN|UNVERIFIABLE|CONTEXT","finding":"1 sentence"}]}]}`}
         ]}]},
@@ -144,7 +145,8 @@ export default function HintBookApp(){
         setStreamContent,
         ctrl.signal
       );
-      setResult(JSON.parse(raw.replace(/```(?:json)?\s*|\s*```/g,"").trim()));
+      try{setResult(JSON.parse(raw.replace(/```(?:json)?\s*|\s*```/g,"").trim()));}
+      catch(pe){throw new Error(`JSON parse error (response may be truncated): ${pe.message}`);}
     }catch(e){if(e.name!=="AbortError"&&e.message!=="__auth__")setErr(e.message||"Assessment failed");}
     finally{setBusy(false);setBmsg("");assessAbort.current=null;}
   };
@@ -445,6 +447,12 @@ QUALITY REQUIREMENTS:
                   <input type="number" min="0" max="2" step="0.05" value={assessTemp} disabled={busy}
                     onChange={e=>{const v=parseFloat(e.target.value);if(!isNaN(v))setAssessTemp(Math.min(2,Math.max(0,v)));}}
                     style={{width:36,fontSize:"11px",border:"none",outline:"none",color:"#334155",fontFamily:"system-ui,sans-serif",textAlign:"center",padding:0,background:"transparent"}}/>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:4,padding:"4px 8px",borderRadius:7,border:"1px solid #e2e8f0",background:"white",height:28,boxSizing:"border-box"}}>
+                  <span style={{fontSize:"10px",color:"#94a3b8",userSelect:"none"}}>Max tok</span>
+                  <input type="number" min="1024" max="16384" step="1024" value={assessMaxTok} disabled={busy}
+                    onChange={e=>{const v=parseInt(e.target.value);if(!isNaN(v))setAssessMaxTok(Math.min(16384,Math.max(1024,v)));}}
+                    style={{width:44,fontSize:"11px",border:"none",outline:"none",color:"#334155",fontFamily:"system-ui,sans-serif",textAlign:"center",padding:0,background:"transparent"}}/>
                 </div>
                 <button className="upbtn" onClick={()=>fileRef.current?.click()} style={{fontSize:"12px",padding:"6px 13px",borderRadius:8,border:"1px solid #e2e8f0",background:"white",cursor:"pointer",color:"#334155",display:"flex",alignItems:"center",gap:6,fontWeight:500,transition:"background .1s"}}><i className="ti ti-upload" style={{fontSize:13}}/>Upload</button>
                 <button className="abtn" onClick={doAssess} disabled={!imgs.length||busy} style={{fontSize:"12px",padding:"6px 15px",borderRadius:8,border:"none",cursor:imgs.length&&!busy?"pointer":"not-allowed",background:imgs.length&&!busy?"#2563eb":"#e2e8f0",color:imgs.length&&!busy?"white":"#94a3b8",display:"flex",alignItems:"center",gap:6,fontWeight:600,transition:"background .15s"}}>
