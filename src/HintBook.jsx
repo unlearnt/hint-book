@@ -54,7 +54,7 @@ const lsSet=(k,v,evict)=>{
     else{console.warn("localStorage save failed:",e);}
   }
 };
-const mkPage=()=>({tabs:[{id:"t1",label:"Test 1",imgs:[],result:null,err:null}],activeTabId:"t1",nextTabNum:2});
+const mkPage=()=>({tabs:[{id:"t1",label:"Test 1",imgs:[],result:null,err:null,model:null}],activeTabId:"t1",nextTabNum:2});
 const dehydrate=store=>{const o={};for(const[id,d]of Object.entries(store)){o[id]={...d,tabs:(d.tabs||[]).map(tab=>({...tab,imgs:(tab.imgs||[]).map(({preview:_,...img})=>img)}))};delete o[id].imgs;delete o[id].result;delete o[id].err;}return o;};
 const hydrate=store=>{
   const o={};
@@ -108,8 +108,7 @@ export default function HintBookApp(){
     setPageStore(p=>{const d=p[pgId]||mkPage();const num=d.nextTabNum||d.tabs.length+1;return{...p,[pgId]:{...d,tabs:[...d.tabs,{id,label:"Test "+num,imgs:[],result:null,err:null}],activeTabId:id,nextTabNum:num+1}};});
   };
   const removeTab=id=>{
-    if(tabs.length<=1)return;
-    setPageStore(p=>{const d=p[pgId]||mkPage();const nt=d.tabs.filter(t=>t.id!==id);const na=d.activeTabId===id?nt[Math.max(0,d.tabs.findIndex(t=>t.id===id)-1)].id:d.activeTabId;return{...p,[pgId]:{tabs:nt,activeTabId:na}};});
+    setPageStore(p=>{const d=p[pgId]||mkPage();const nt=d.tabs.filter(t=>t.id!==id);const na=nt.length?(d.activeTabId===id?nt[Math.max(0,d.tabs.findIndex(t=>t.id===id)-1)].id:d.activeTabId):null;return{...p,[pgId]:{...d,tabs:nt,activeTabId:na,nextTabNum:nt.length===0?1:d.nextTabNum}};});
   };
   const allPages={...PAGES,...dynPages};
   const pg=allPages[pgId]||Object.values(allPages)[0];
@@ -137,11 +136,21 @@ export default function HintBookApp(){
         try{
           const delta=JSON.parse(d).choices?.[0]?.delta;
           if(delta?.reasoning_content){fullThink+=delta.reasoning_content;onThink(fullThink);}
-          if(delta?.content){fullContent+=delta.content;onContent(fullContent);}
+          if(delta?.content){
+            fullContent+=delta.content;
+            // Qwen3 thinking models embed reasoning in <think>...</think> tags in content
+            const te=fullContent.indexOf("</think>");
+            if(fullContent.startsWith("<think>")){
+              if(te!==-1){onThink(fullContent.slice(7,te));onContent(fullContent.slice(te+8));}
+              else{onThink(fullContent.slice(7));}
+            }else{onContent(fullContent);}
+          }
         }catch{}
       }
     }
-    return fullContent;
+    // strip <think> block from returned string so JSON parsing isn't confused
+    const te=fullContent.indexOf("</think>");
+    return(fullContent.startsWith("<think>")&&te!==-1)?fullContent.slice(te+8):fullContent;
   };
 
   const exportPage=p=>{
@@ -183,7 +192,12 @@ export default function HintBookApp(){
       const apiB64=await resizeToBase64(dataUrl,mtype,1024);
       return{preview:dataUrl,base64:apiB64,mtype,name:f.name,size:f.size};
     }));
-    setImgs([...existing,...proc]);setResult(null);setErr(null);
+    const newImgs=[...existing,...proc];
+    setPageStore(p=>{
+      let d=p[pgId]||mkPage();let tid=d.activeTabId;
+      if(!d.tabs||!d.tabs.length){const id="t"+Date.now();const num=d.nextTabNum||1;d={...d,tabs:[{id,label:"Test "+num,imgs:[],result:null,err:null,model:null}],activeTabId:id,nextTabNum:num+1};tid=id;}
+      return updTab({...p,[pgId]:d},tid,{imgs:newImgs,result:null,err:null,model:null});
+    });
   };
 
   const doAssess=async()=>{
@@ -202,7 +216,7 @@ export default function HintBookApp(){
         setStreamContent,
         ctrl.signal
       );
-      try{const s=raw.indexOf("{"),e=raw.lastIndexOf("}");if(s===-1||e===-1)throw new Error("No JSON object found in response");setResult(JSON.parse(raw.slice(s,e+1)));}
+      try{const s=raw.indexOf("{"),e=raw.lastIndexOf("}");if(s===-1||e===-1)throw new Error("No JSON object found in response");const parsed=JSON.parse(raw.slice(s,e+1));setPageStore(p=>{const d=p[pgId]||mkPage();return updTab(p,d.activeTabId,{result:parsed,model:assessModel});});}
       catch(pe){throw new Error(`JSON parse error: ${pe.message}`);}
     }catch(e){if(e.name!=="AbortError"&&e.message!=="__auth__")setErr(e.message||"Assessment failed");}
     finally{setBusy(false);setBmsg("");assessAbort.current=null;}
@@ -533,15 +547,15 @@ QUALITY REQUIREMENTS:
               {tabs.map(tab=>{const active=tab.id===activeTabId;return(
                 <div key={tab.id} style={{position:"relative",display:"flex",alignItems:"center"}}>
                   <button onClick={()=>setActiveTab(tab.id)} disabled={busy}
-                    style={{padding:"5px 10px",fontSize:"11px",fontWeight:active?600:400,color:active?"#0f172a":"#94a3b8",background:"none",border:"none",borderBottom:active?"2px solid #2563eb":"2px solid transparent",cursor:"pointer",whiteSpace:"nowrap",fontFamily:"system-ui,sans-serif",marginBottom:-1,transition:"color .1s",paddingRight:tabs.length>1?"24px":"10px"}}>
+                    style={{padding:"5px 10px",fontSize:"11px",fontWeight:active?600:400,color:active?"#0f172a":"#94a3b8",background:"none",border:"none",borderBottom:active?"2px solid #2563eb":"2px solid transparent",cursor:"pointer",whiteSpace:"nowrap",fontFamily:"system-ui,sans-serif",marginBottom:-1,transition:"color .1s",paddingRight:"24px"}}>
                     {tab.label}
                     {tab.result&&<span style={{marginLeft:5,fontSize:"9px",padding:"1px 5px",borderRadius:999,fontWeight:700,background:tab.result.verdict==="APPEARS_LEGITIMATE"?"#dcfce7":tab.result.verdict==="CANNOT_DETERMINE"?"#f1f5f9":"#fee2e2",color:tab.result.verdict==="APPEARS_LEGITIMATE"?"#15803d":tab.result.verdict==="CANNOT_DETERMINE"?"#64748b":"#dc2626"}}>{tab.result.verdict==="APPEARS_LEGITIMATE"?"✓":tab.result.verdict==="CANNOT_DETERMINE"?"?":"!"}</span>}
                   </button>
-                  {tabs.length>1&&<button onClick={()=>removeTab(tab.id)} disabled={busy}
+                  <button onClick={()=>removeTab(tab.id)} disabled={busy}
                     style={{position:"absolute",right:2,top:"50%",transform:"translateY(-50%) translateY(-1px)",background:"none",border:"none",cursor:"pointer",color:"#cbd5e1",padding:"1px 2px",lineHeight:1,fontSize:11,display:"flex",alignItems:"center"}}
                     onMouseEnter={e=>e.currentTarget.style.color="#94a3b8"} onMouseLeave={e=>e.currentTarget.style.color="#cbd5e1"}>
                     <i className="ti ti-x" style={{fontSize:9}}/>
-                  </button>}
+                  </button>
                 </div>
               );})}
               {tabs.length<5&&<button onClick={addTab} disabled={busy}
@@ -599,7 +613,7 @@ QUALITY REQUIREMENTS:
             {err&&(<div style={{padding:"12px 14px",background:"#fef2f2",borderRadius:10,border:"1px solid #fca5a5",display:"flex",gap:10,alignItems:"flex-start"}}><i className="ti ti-alert-circle" style={{fontSize:18,color:"#dc2626",flexShrink:0,marginTop:1}}/><div><div style={{fontSize:"13px",fontWeight:600,color:"#991b1b",marginBottom:2}}>Assessment failed</div><div style={{fontSize:"12px",color:"#b91c1c",lineHeight:1.5}}>{err}</div></div></div>)}
             {result&&(<div>
               <div style={{padding:"13px 15px",borderRadius:11,background:vc.bg,border:`2px solid ${vc.border}`,marginBottom:13,display:"flex",gap:12,alignItems:"flex-start"}}>
-                <i className={`ti ${vc.icon}`} style={{fontSize:24,color:vc.text,flexShrink:0,marginTop:1}}/><div><div style={{fontWeight:700,color:vc.text,fontSize:"14px",marginBottom:5}}>{vc.label}</div><div style={{fontSize:"12px",color:vc.text,lineHeight:1.6,opacity:.9}}>{result.summary}</div></div>
+                <i className={`ti ${vc.icon}`} style={{fontSize:24,color:vc.text,flexShrink:0,marginTop:1}}/><div style={{flex:1}}><div style={{fontWeight:700,color:vc.text,fontSize:"14px",marginBottom:5}}>{vc.label}</div><div style={{fontSize:"12px",color:vc.text,lineHeight:1.6,opacity:.9}}>{result.summary}</div>{activeTab.model&&<div style={{marginTop:7,fontSize:"10px",opacity:.65,display:"flex",alignItems:"center",gap:4}}><i className="ti ti-robot" style={{fontSize:10}}/>{ASSESS_MODELS.find(m=>m.id===activeTab.model)?.label||activeTab.model}</div>}</div>
               </div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:13}}>
                 {[["Passed",result.passes,"#f0fdf4","#15803d","#86efac"],["Crit. fails",result.criticalFails,"#fef2f2","#dc2626","#fca5a5"],["Warnings",result.warnings,"#fffbeb","#d97706","#fde68a"],["Unverifiable",result.unverifiable,"#f8fafc","#475569","#e2e8f0"]].map(([lb,v,bg,tx,bd])=>(
