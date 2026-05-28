@@ -74,6 +74,7 @@ export default function HintBookApp(){
   const[busy,setBusy]=useState(false);
   const[bmsg,setBmsg]=useState("");
   const[lightbox,setLightbox]=useState(null);
+  const[showThinking,setShowThinking]=useState(false);
   const[centerW,setCenterW]=useState(()=>lsGet("hb_settings",{}).centerW||260);
   const[dynPages,setDynPages]=useState(()=>lsGet("hb_dynPages",{}));
   const[addOpen,setAddOpen]=useState(false);
@@ -178,7 +179,7 @@ export default function HintBookApp(){
   useEffect(()=>{
     const onMove=e=>{if(!dragging.current)return;const d=e.clientX-dragX.current;setCenterW(Math.max(180,Math.min(520,dragW.current+d)));};
     const onUp=()=>{dragging.current=false;document.body.style.cursor="";document.body.style.userSelect="";};
-    const onKey=e=>{if(e.key==="Escape")setLightbox(null);};
+    const onKey=e=>{if(e.key==="Escape"){setLightbox(null);setShowThinking(false);}};
     window.addEventListener("mousemove",onMove);window.addEventListener("mouseup",onUp);window.addEventListener("keydown",onKey);
     return()=>{window.removeEventListener("mousemove",onMove);window.removeEventListener("mouseup",onUp);window.removeEventListener("keydown",onKey);};
   },[]);
@@ -467,7 +468,7 @@ QUALITY REQUIREMENTS:
           <div style={{padding:"12px 14px",borderBottom:"1px solid #e2e8f0",background:"white",flexShrink:0}}>
             <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3}}><div style={{width:9,height:9,borderRadius:"50%",background:pg.color}}/><span style={{fontSize:"13px",fontWeight:700,color:"#0f172a"}}>{pg.title}</span></div>
             <div style={{fontSize:"11px",color:"#64748b",marginBottom:THINKING[pgId]?5:9}}>{pg.subtitle}</div>
-            {THINKING[pgId]&&<div style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:"9px",fontWeight:600,color:"#7c3aed",background:"#f5f3ff",border:"1px solid #ddd6fe",borderRadius:5,padding:"2px 7px",marginBottom:9}}><i className="ti ti-brain" style={{fontSize:10}}/>Expert guidance loaded</div>}
+            {THINKING[pgId]&&<button onClick={()=>setShowThinking(true)} style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:"9px",fontWeight:600,color:"#7c3aed",background:"#f5f3ff",border:"1px solid #ddd6fe",borderRadius:5,padding:"2px 7px",marginBottom:9,cursor:"pointer",fontFamily:"system-ui,sans-serif"}} onMouseEnter={e=>{e.currentTarget.style.background="#ede9fe";}} onMouseLeave={e=>{e.currentTarget.style.background="#f5f3ff";}}><i className="ti ti-brain" style={{fontSize:10}}/>Expert guidance loaded</button>}
             <div style={{display:"flex",gap:6}}><button onClick={allOpen} style={{flex:1,fontSize:"11px",padding:"4px 0",border:"1px solid #e2e8f0",borderRadius:6,background:"white",cursor:"pointer",color:"#475569"}}>Expand all</button><button onClick={allClose} style={{flex:1,fontSize:"11px",padding:"4px 0",border:"1px solid #e2e8f0",borderRadius:6,background:"white",cursor:"pointer",color:"#475569"}}>Collapse</button></div>
           </div>
           <div className="cs" style={{flex:1,overflowY:"auto",padding:"8px"}}>
@@ -654,6 +655,23 @@ QUALITY REQUIREMENTS:
           <button onClick={()=>setLightbox(null)} style={{position:"absolute",top:16,right:16,background:"rgba(255,255,255,.15)",border:"none",borderRadius:"50%",width:36,height:36,cursor:"pointer",color:"white",display:"flex",alignItems:"center",justifyContent:"center"}}>
             <i className="ti ti-x" style={{fontSize:16}}/>
           </button>
+        </div>
+      )}
+      {showThinking&&THINKING[pgId]&&(
+        <div onClick={()=>setShowThinking(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"white",borderRadius:14,width:"100%",maxWidth:640,maxHeight:"80vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.4)",overflow:"hidden"}}>
+            <div style={{padding:"14px 18px",borderBottom:"1px solid #e2e8f0",display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+              <div style={{width:28,height:28,background:"#f5f3ff",borderRadius:7,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><i className="ti ti-brain" style={{fontSize:15,color:"#7c3aed"}}/></div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:"13px",fontWeight:700,color:"#0f172a"}}>Expert Forensic Guidance</div>
+                <div style={{fontSize:"10px",color:"#94a3b8",marginTop:1}}>{pg.title}</div>
+              </div>
+              <button onClick={()=>setShowThinking(false)} style={{background:"none",border:"none",cursor:"pointer",color:"#94a3b8",display:"flex",alignItems:"center",padding:4,borderRadius:6}} onMouseEnter={e=>e.currentTarget.style.color="#475569"} onMouseLeave={e=>e.currentTarget.style.color="#94a3b8"}>
+                <i className="ti ti-x" style={{fontSize:16}}/>
+              </button>
+            </div>
+            <div className="rs" style={{padding:"16px 18px",overflowY:"auto",fontSize:"13px",color:"#334155",lineHeight:1.75,whiteSpace:"pre-wrap"}}>{THINKING[pgId]}</div>
+          </div>
         </div>
       )}
     </>
