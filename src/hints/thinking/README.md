@@ -8,24 +8,22 @@ Each file must be named after the hint page's `id` field:
 
 ```
 thinking/
-  ca_dl.js          → id: "ca_dl"
-  deu_id.js         → id: "deu_id"
-  us_greencard.js   → id: "us_greencard"
-  nevada_dl_id.js   → id: "nevada_dl_id"
+  ca_dl.txt          → id: "ca_dl"
+  deu_id.txt         → id: "deu_id"
+  us_greencard.txt   → id: "us_greencard"
+  nevada_dl_id.txt   → id: "nevada_dl_id"
 ```
 
 For dynamically generated pages, thinking must be added manually after generation.
 
 ## File format
 
-Each file exports a single plain string:
+Plain `.txt` file — just the raw text, no wrapping needed:
 
-```js
-export default `
+```
 Your expert forensic reasoning here. Plain prose, organised by topic.
 No need to mirror the section structure — the model reads this as context,
 not as a lookup table.
-`;
 ```
 
 ## How it works
@@ -88,8 +86,4 @@ HINT PAGE:
 
 ---
 
-After generating, wrap the output in the JS export and save to this folder:
-
-```js
-export default `[paste generated text here]`;
-```
+After generating, save the output as a `.txt` file in this folder — no wrapping needed, just the raw text.
