@@ -55,7 +55,7 @@ const lsSet=(k,v,evict)=>{
     else{console.warn("localStorage save failed:",e);}
   }
 };
-const mkPage=()=>({tabs:[{id:"t1",label:"Test 1",imgs:[],result:null,err:null,model:null}],activeTabId:"t1",nextTabNum:2});
+const mkPage=()=>({tabs:[{id:"t1",label:"Test 1",imgs:[],result:null,err:null,model:null,guidanceUsed:null}],activeTabId:"t1",nextTabNum:2});
 const dehydrate=store=>{const o={};for(const[id,d]of Object.entries(store)){o[id]={...d,tabs:(d.tabs||[]).map(tab=>({...tab,imgs:(tab.imgs||[]).map(({preview:_,...img})=>img)}))};delete o[id].imgs;delete o[id].result;delete o[id].err;}return o;};
 const hydrate=store=>{
   const o={};
@@ -220,7 +220,7 @@ export default function HintBookApp(){
         setStreamContent,
         ctrl.signal
       );
-      try{const s=raw.indexOf("{"),e=raw.lastIndexOf("}");if(s===-1||e===-1)throw new Error("No JSON object found in response");const parsed=JSON.parse(raw.slice(s,e+1));setPageStore(p=>{const d=p[pgId]||mkPage();return updTab(p,d.activeTabId,{result:parsed,model:assessModel});});}
+      try{const s=raw.indexOf("{"),e=raw.lastIndexOf("}");if(s===-1||e===-1)throw new Error("No JSON object found in response");const parsed=JSON.parse(raw.slice(s,e+1));setPageStore(p=>{const d=p[pgId]||mkPage();return updTab(p,d.activeTabId,{result:parsed,model:assessModel,guidanceUsed:useGuidance&&!!THINKING[pgId]});});}
       catch(pe){throw new Error(`JSON parse error: ${pe.message}`);}
     }catch(e){if(e.name!=="AbortError"&&e.message!=="__auth__")setErr(e.message||"Assessment failed");}
     finally{setBusy(false);setBmsg("");assessAbort.current=null;}
@@ -634,7 +634,7 @@ QUALITY REQUIREMENTS:
             {err&&(<div style={{padding:"12px 14px",background:"#fef2f2",borderRadius:10,border:"1px solid #fca5a5",display:"flex",gap:10,alignItems:"flex-start"}}><i className="ti ti-alert-circle" style={{fontSize:18,color:"#dc2626",flexShrink:0,marginTop:1}}/><div><div style={{fontSize:"13px",fontWeight:600,color:"#991b1b",marginBottom:2}}>Assessment failed</div><div style={{fontSize:"12px",color:"#b91c1c",lineHeight:1.5}}>{err}</div></div></div>)}
             {result&&(<div>
               <div style={{padding:"13px 15px",borderRadius:11,background:vc.bg,border:`2px solid ${vc.border}`,marginBottom:13,display:"flex",gap:12,alignItems:"flex-start"}}>
-                <i className={`ti ${vc.icon}`} style={{fontSize:24,color:vc.text,flexShrink:0,marginTop:1}}/><div style={{flex:1}}><div style={{fontWeight:700,color:vc.text,fontSize:"14px",marginBottom:5}}>{vc.label}</div><div style={{fontSize:"12px",color:vc.text,lineHeight:1.6,opacity:.9}}>{result.summary}</div>{activeTab.model&&<div style={{marginTop:7,fontSize:"10px",opacity:.65,display:"flex",alignItems:"center",gap:4}}><i className="ti ti-robot" style={{fontSize:10}}/>{ASSESS_MODELS.find(m=>m.id===activeTab.model)?.label||activeTab.model}</div>}</div>
+                <i className={`ti ${vc.icon}`} style={{fontSize:24,color:vc.text,flexShrink:0,marginTop:1}}/><div style={{flex:1}}><div style={{fontWeight:700,color:vc.text,fontSize:"14px",marginBottom:5}}>{vc.label}</div><div style={{fontSize:"12px",color:vc.text,lineHeight:1.6,opacity:.9}}>{result.summary}</div>{activeTab.model&&<div style={{marginTop:7,fontSize:"10px",opacity:.65,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}><span style={{display:"flex",alignItems:"center",gap:4}}><i className="ti ti-robot" style={{fontSize:10}}/>{ASSESS_MODELS.find(m=>m.id===activeTab.model)?.label||activeTab.model}</span>{activeTab.guidanceUsed!==null&&<span style={{display:"flex",alignItems:"center",gap:4}}><i className={`ti ${activeTab.guidanceUsed?"ti-brain":"ti-brain-off"}`} style={{fontSize:10}}/>{activeTab.guidanceUsed?"expert guidance":"no guidance"}</span>}</div>}</div>
               </div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:13}}>
                 {[["Passed",result.passes,"#f0fdf4","#15803d","#86efac"],["Crit. fails",result.criticalFails,"#fef2f2","#dc2626","#fca5a5"],["Warnings",result.warnings,"#fffbeb","#d97706","#fde68a"],["Unverifiable",result.unverifiable,"#f8fafc","#475569","#e2e8f0"]].map(([lb,v,bg,tx,bd])=>(
