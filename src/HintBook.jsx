@@ -503,28 +503,30 @@ QUALITY REQUIREMENTS:
             </div>
             <input ref={fileRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>processFiles(e.target.files,false)}/>
             <input ref={addRef} type="file" accept="image/*" style={{display:"none"}} onChange={e=>processFiles(e.target.files,true)}/>
-            {imgs.length===0?(
-              <div className="dropz" onClick={()=>fileRef.current?.click()} onDrop={e=>{e.preventDefault();processFiles(e.dataTransfer.files,false);}} onDragOver={e=>e.preventDefault()}
-                style={{height:"165px",border:"1.5px dashed #cbd5e1",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexDirection:"column",gap:10,transition:"all .15s",color:"#94a3b8",background:"#f8fafc"}}>
-                <i className="ti ti-photo-up" style={{fontSize:32}}/>
-                <div style={{textAlign:"center",lineHeight:1.6}}><div style={{fontSize:"13px",fontWeight:500}}>Click or drag document image(s) here</div><div style={{fontSize:"11px",marginTop:2}}>Front + Back · max 2 images · auto-resized to 1024px longest side</div></div>
-              </div>
-            ):(
-              <div style={{display:"flex",gap:12,alignItems:"stretch"}}>
-                {imgs.map((img,i)=>(
-                  <div key={i} style={{flex:1,position:"relative",background:"#f8fafc",borderRadius:10,border:"1px solid #e2e8f0",overflow:"hidden",display:"flex",flexDirection:"column"}}>
-                    <div style={{flex:1,height:"150px",display:"flex",alignItems:"center",justifyContent:"center",padding:"8px",background:"#f8fafc"}}>
-                      <img src={img.preview} alt={`doc${i+1}`} style={{maxWidth:"100%",maxHeight:"100%",width:"auto",height:"auto",objectFit:"contain",display:"block",borderRadius:6,boxShadow:"0 1px 6px rgba(0,0,0,.12)"}}/>
+            <div style={{height:"174px",flexShrink:0}}>
+              {imgs.length===0?(
+                <div className="dropz" onClick={()=>fileRef.current?.click()} onDrop={e=>{e.preventDefault();processFiles(e.dataTransfer.files,false);}} onDragOver={e=>e.preventDefault()}
+                  style={{height:"100%",border:"1.5px dashed #cbd5e1",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexDirection:"column",gap:10,transition:"all .15s",color:"#94a3b8",background:"#f8fafc"}}>
+                  <i className="ti ti-photo-up" style={{fontSize:32}}/>
+                  <div style={{textAlign:"center",lineHeight:1.6}}><div style={{fontSize:"13px",fontWeight:500}}>Click or drag document image(s) here</div><div style={{fontSize:"11px",marginTop:2}}>Front + Back · max 2 images · auto-resized to 1024px longest side</div></div>
+                </div>
+              ):(
+                <div style={{display:"flex",gap:12,height:"100%"}}>
+                  {imgs.map((img,i)=>(
+                    <div key={i} style={{flex:1,position:"relative",background:"#f8fafc",borderRadius:10,border:"1px solid #e2e8f0",overflow:"hidden",display:"flex",flexDirection:"column"}}>
+                      <div style={{flex:1,minHeight:0,display:"flex",alignItems:"center",justifyContent:"center",padding:"8px",background:"#f8fafc"}}>
+                        <img src={img.preview} alt={`doc${i+1}`} style={{maxWidth:"100%",maxHeight:"100%",width:"auto",height:"auto",objectFit:"contain",display:"block",borderRadius:6,boxShadow:"0 1px 6px rgba(0,0,0,.12)"}}/>
+                      </div>
+                      <div style={{flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 10px",background:"#f1f5f9",borderTop:"1px solid #e2e8f0"}}>
+                        <div><span style={{fontSize:"11px",fontWeight:600,color:"#475569",marginRight:6}}>{i===0?"Front":"Back"}</span><span style={{fontSize:"10px",color:"#94a3b8"}}>{fmtSize(img.size)}</span></div>
+                        <button className="imgdel" onClick={()=>setImgs(p=>p.filter((_,j)=>j!==i))} style={{background:"rgba(0,0,0,.35)",border:"none",borderRadius:"50%",width:20,height:20,cursor:"pointer",color:"white",display:"flex",alignItems:"center",justifyContent:"center",padding:0,transition:"background .1s"}}><i className="ti ti-x" style={{fontSize:10}}/></button>
+                      </div>
                     </div>
-                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 10px",background:"#f1f5f9",borderTop:"1px solid #e2e8f0"}}>
-                      <div><span style={{fontSize:"11px",fontWeight:600,color:"#475569",marginRight:6}}>{i===0?"Front":"Back"}</span><span style={{fontSize:"10px",color:"#94a3b8"}}>{fmtSize(img.size)}</span></div>
-                      <button className="imgdel" onClick={()=>setImgs(p=>p.filter((_,j)=>j!==i))} style={{background:"rgba(0,0,0,.35)",border:"none",borderRadius:"50%",width:20,height:20,cursor:"pointer",color:"white",display:"flex",alignItems:"center",justifyContent:"center",padding:0,transition:"background .1s"}}><i className="ti ti-x" style={{fontSize:10}}/></button>
-                    </div>
-                  </div>
-                ))}
-                {imgs.length<2&&(<div className="addslot" onClick={()=>addRef.current?.click()} style={{flex:1,height:"174px",border:"1.5px dashed #cbd5e1",borderRadius:10,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",cursor:"pointer",color:"#94a3b8",gap:7,background:"#f8fafc",transition:"all .15s"}}><i className="ti ti-plus" style={{fontSize:24}}/><span style={{fontSize:"12px",fontWeight:500}}>Add back</span></div>)}
-              </div>
-            )}
+                  ))}
+                  {imgs.length<2&&(<div className="addslot" onClick={()=>addRef.current?.click()} style={{flex:1,border:"1.5px dashed #cbd5e1",borderRadius:10,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",cursor:"pointer",color:"#94a3b8",gap:7,background:"#f8fafc",transition:"all .15s"}}><i className="ti ti-plus" style={{fontSize:24}}/><span style={{fontSize:"12px",fontWeight:500}}>Add back</span></div>)}
+                </div>
+              )}
+            </div>
             {busy&&<div style={{marginTop:9,fontSize:"12px",color:"#2563eb",display:"flex",alignItems:"center",gap:7}}><i className="ti ti-loader sp" style={{fontSize:12}}/>Analyzing document…</div>}
           </div>
 
