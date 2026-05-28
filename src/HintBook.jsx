@@ -61,6 +61,7 @@ export default function HintBookApp(){
   const[assessTemp,setAssessTemp]=useState(0.1);
   const[assessMaxTok,setAssessMaxTok]=useState(8192);
   const[genTemp,setGenTemp]=useState(0.4);
+  const[genMaxTok,setGenMaxTok]=useState(8192);
   const[streamThink,setStreamThink]=useState("");
   const[streamContent,setStreamContent]=useState("");
   const[genStreamThink,setGenStreamThink]=useState("");
@@ -243,7 +244,7 @@ QUALITY REQUIREMENTS:
     try{
       const raw=await streamSSE(
         "/api/llm/chat/completions",
-        {model:genModel,temperature:genTemp,max_tokens:6000,messages:[{role:"user",content:HINTBOOK_PROMPT(addInput.trim())}]},
+        {model:genModel,temperature:genTemp,max_tokens:genMaxTok,messages:[{role:"user",content:HINTBOOK_PROMPT(addInput.trim())}]},
         setGenStreamThink,
         setGenStreamContent,
         ctrl.signal
@@ -337,6 +338,12 @@ QUALITY REQUIREMENTS:
                     <input type="number" min="0" max="2" step="0.05" value={genTemp} disabled={genBusy}
                       onChange={e=>{const v=parseFloat(e.target.value);if(!isNaN(v))setGenTemp(Math.min(2,Math.max(0,v)));}}
                       style={{width:32,fontSize:"11px",border:"none",outline:"none",color:"#94a3b8",fontFamily:"system-ui,sans-serif",textAlign:"center",padding:0,background:"transparent"}}/>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:4,padding:"5px 8px",borderRadius:6,border:"1px solid #334155",background:"#1e293b",flexShrink:0}}>
+                    <span style={{fontSize:"9px",color:"#475569",userSelect:"none"}}>Tok</span>
+                    <input type="number" min="1024" max="16384" step="1024" value={genMaxTok} disabled={genBusy}
+                      onChange={e=>{const v=parseInt(e.target.value);if(!isNaN(v))setGenMaxTok(Math.min(16384,Math.max(1024,v)));}}
+                      style={{width:36,fontSize:"11px",border:"none",outline:"none",color:"#94a3b8",fontFamily:"system-ui,sans-serif",textAlign:"center",padding:0,background:"transparent"}}/>
                   </div>
                 </div>
                 <div style={{fontSize:"9px",fontWeight:600,color:"#475569",letterSpacing:".06em",textTransform:"uppercase",marginBottom:6}}>Document type to add</div>
