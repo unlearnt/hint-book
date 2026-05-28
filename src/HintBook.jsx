@@ -45,10 +45,8 @@ function resizeToBase64(dataUrl,mtype,maxSide=1024){
 export default function HintBookApp(){
   const[pgId,setPgId]=useState("ca_dl");
   const[open,setOpen]=useState({});
-  const[imgs,setImgs]=useState([]);
+  const[pageStore,setPageStore]=useState({});
   const[busy,setBusy]=useState(false);
-  const[result,setResult]=useState(null);
-  const[err,setErr]=useState(null);
   const[bmsg,setBmsg]=useState("");
   const[centerW,setCenterW]=useState(260);
   const[dynPages,setDynPages]=useState({});
@@ -70,6 +68,10 @@ export default function HintBookApp(){
   const addInputRef=useRef();const leaveTimer=useRef();const addPanelRef=useRef();
   const dragging=useRef(false);const dragX=useRef(0);const dragW=useRef(0);
   const assessAbort=useRef(null);const genAbort=useRef(null);
+  const{imgs=[],result=null,err=null}=pageStore[pgId]||{};
+  const setImgs=v=>setPageStore(p=>{const c=p[pgId]||{};return{...p,[pgId]:{...c,imgs:typeof v==="function"?v(c.imgs||[]):v}};});
+  const setResult=v=>setPageStore(p=>({...p,[pgId]:{...(p[pgId]||{}),result:v}}));
+  const setErr=v=>setPageStore(p=>({...p,[pgId]:{...(p[pgId]||{}),err:v}}));
   const allPages={...PAGES,...dynPages};
   const pg=allPages[pgId]||Object.values(allPages)[0];
   const total=pg.sections.reduce((a,s)=>a+s.hints.length,0);
@@ -252,7 +254,7 @@ QUALITY REQUIREMENTS:
       const page=JSON.parse(raw.replace(/```(?:json)?\s*|\s*```/g,"").trim());
       if(!page.id||!page.sections)throw new Error("Malformed response — missing id or sections");
       setDynPages(prev=>({...prev,[page.id]:page}));
-      setPgId(page.id);setAddInput("");setAddOpen(false);setResult(null);setImgs([]);setOpen({});
+      setPgId(page.id);setAddInput("");setAddOpen(false);setOpen({});
       setGenStreamThink("");setGenStreamContent("");
     }catch(e){if(e.name!=="AbortError"&&e.message!=="__auth__")setGenErr(e.message||"Generation failed. Try again.");}
     finally{setGenBusy(false);genAbort.current=null;}
@@ -266,7 +268,7 @@ QUALITY REQUIREMENTS:
       const page=JSON.parse(match[1]);
       if(!page.id||!page.sections)throw new Error("Invalid hint page: missing id or sections");
       setDynPages(prev=>({...prev,[page.id]:page}));
-      setPgId(page.id);setResult(null);setImgs([]);setErr(null);setOpen({});
+      setPgId(page.id);setOpen({});
     }catch(ex){setGenErr(ex.message||"Failed to load file");setAddOpen(true);}
   };
   const openAdd=()=>{clearTimeout(leaveTimer.current);setAddOpen(true);setTimeout(()=>addInputRef.current?.focus(),50);};
@@ -309,7 +311,7 @@ QUALITY REQUIREMENTS:
           <div style={{flex:1,padding:"0 7px",overflowY:"auto"}} className="hs">
             {Object.values(allPages).map(p=>{const active=pgId===p.id;const isDyn=!!dynPages[p.id];return(
               <div key={p.id} style={{position:"relative",marginBottom:4}}>
-                <button className="pgbtn" onClick={()=>{setPgId(p.id);setResult(null);setErr(null);setOpen({});}}
+                <button className="pgbtn" onClick={()=>{setPgId(p.id);setOpen({});}}
                   style={{display:"block",width:"100%",padding:"10px 10px",border:"none",borderRadius:8,cursor:"pointer",textAlign:"left",background:active?"rgba(37,99,235,.15)":"transparent",outline:active?`1.5px solid ${p.color}`:"none",outlineOffset:"-1.5px",transition:"background .12s"}}>
                   <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:4}}><div style={{width:8,height:8,borderRadius:"50%",background:active?p.color:"#334155",flexShrink:0,transition:"background .12s"}}/><span style={{fontSize:"11px",fontWeight:600,color:active?"white":"#94a3b8",lineHeight:1.3}}>{p.title}</span>{isDyn&&<span style={{fontSize:"8px",background:"rgba(37,99,235,.25)",color:"#60a5fa",borderRadius:3,padding:"1px 4px",marginLeft:"auto",flexShrink:0}}>GEN</span>}</div>
                   <div style={{fontSize:"10px",color:"#475569",lineHeight:1.4,paddingLeft:15}}>{p.subtitle}</div>
