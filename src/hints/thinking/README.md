@@ -18,12 +18,18 @@ For dynamically generated pages, thinking must be added manually after generatio
 
 ## File format
 
-Plain `.txt` file — just the raw text, no wrapping needed:
+Plain `.txt` file using minimal markdown — `##` section headers, `**bold**` for exact values, `-` bullets. No tables, no code blocks:
 
 ```
-Your expert forensic reasoning here. Plain prose, organised by topic.
-No need to mirror the section structure — the model reads this as context,
-not as a lookup table.
+## Highest-signal checks
+Any mismatch between the printed name and barcode field DCS is **near-certain tampering**.
+
+## Common forgery patterns
+- DL number wrong: forgers use all-numeric strings like **58754758** instead of **A1234567**
+- Label reads 'DRIVER'S LICENSE' — correct is **DRIVER LICENSE** (no apostrophe)
+
+## Cross-field consistency traps
+The age bar year must equal DOB year + 21. A one-year-off error is the most common mistake.
 ```
 
 ## How it works
@@ -71,14 +77,19 @@ The briefing should capture:
 5. Visual assessment tips — what to actually look for in an image for the trickiest checks
 
 CONSTRAINTS:
-- Plain prose only. No headers, no bullet lists, no section IDs. Write as a flowing expert briefing.
 - Maximum 500 tokens. Every sentence must earn its place.
 - Do not restate what is already obvious from the hint questions.
 - Be specific: exact character counts, exact label text, exact field positions if known.
 - Focus on what separates a good forgery from a genuine document — not basic errors.
 
 OUTPUT FORMAT:
-Return only the briefing text. No preamble, no "here is your briefing", no markdown. Just the raw text that will be inserted verbatim into a forensic AI prompt.
+Use minimal markdown for structure:
+- ## for section headers (use 3–5 sections max)
+- **bold** for exact values, field names, and critical rules
+- - bullet points within sections where listing makes sense
+- Plain prose for everything else
+No tables. No code blocks. No nested bullets.
+Return only the briefing. No preamble, no "here is your briefing".
 
 HINT PAGE:
 [paste your hint page JSON here]

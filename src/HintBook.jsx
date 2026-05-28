@@ -331,6 +331,17 @@ QUALITY REQUIREMENTS:
     finally{setGenBusy(false);genAbort.current=null;}
   };
 
+  const renderMd=text=>{
+    const bold=(s,k)=>s.split(/(\*\*[^*]+\*\*)/).map((p,i)=>p.startsWith("**")&&p.endsWith("**")?<strong key={`${k}b${i}`} style={{color:"#1e293b",fontWeight:700}}>{p.slice(2,-2)}</strong>:p);
+    return text.split("\n").map((line,i)=>{
+      if(line.startsWith("## "))return<div key={i} style={{fontWeight:700,color:"#7c3aed",fontSize:"10px",marginTop:i>0?16:0,marginBottom:6,letterSpacing:".07em",textTransform:"uppercase"}}>{line.slice(3)}</div>;
+      if(line.startsWith("# "))return<div key={i} style={{fontWeight:700,color:"#0f172a",fontSize:"14px",marginTop:i>0?12:0,marginBottom:4}}>{line.slice(2)}</div>;
+      if(line.match(/^[-*] /))return<div key={i} style={{display:"flex",gap:7,paddingLeft:4,marginBottom:4}}><span style={{color:"#7c3aed",flexShrink:0,lineHeight:"1.7"}}>•</span><span style={{flex:1,lineHeight:1.7}}>{bold(line.slice(2),i)}</span></div>;
+      if(!line.trim())return<div key={i} style={{height:6}}/>;
+      return<div key={i} style={{marginBottom:4,lineHeight:1.7}}>{bold(line,i)}</div>;
+    });
+  };
+
   const loadJsFile=async file=>{
     try{
       const text=await file.text();
@@ -670,7 +681,7 @@ QUALITY REQUIREMENTS:
                 <i className="ti ti-x" style={{fontSize:16}}/>
               </button>
             </div>
-            <div className="rs" style={{padding:"16px 18px",overflowY:"auto",fontSize:"13px",color:"#334155",lineHeight:1.75,whiteSpace:"pre-wrap"}}>{THINKING[pgId]}</div>
+            <div className="rs" style={{padding:"16px 18px",overflowY:"auto",fontSize:"13px",color:"#334155"}}>{renderMd(THINKING[pgId])}</div>
           </div>
         </div>
       )}
