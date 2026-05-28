@@ -56,6 +56,8 @@ Avoid:
 
 Use this with Claude (extended thinking enabled, `budget_tokens` ≥ 8000) or any strong reasoning model. Replace the hint page JSON with your actual page content.
 
+**Do not include a document image when generating.** The thinking trace must be general knowledge about the document *type*, not observations about one specific card. If you include an image the model anchors to that example — wrong generation, wrong print variant, wrong for every other card you'll ever assess. The hint page JSON plus the model's training knowledge is sufficient.
+
 ---
 
 ```
