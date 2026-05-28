@@ -176,8 +176,8 @@ export default function HintBookApp(){
         setStreamContent,
         ctrl.signal
       );
-      try{setResult(JSON.parse(raw.replace(/```(?:json)?\s*|\s*```/g,"").trim()));}
-      catch(pe){throw new Error(`JSON parse error (response may be truncated): ${pe.message}`);}
+      try{const s=raw.indexOf("{"),e=raw.lastIndexOf("}");if(s===-1||e===-1)throw new Error("No JSON object found in response");setResult(JSON.parse(raw.slice(s,e+1)));}
+      catch(pe){throw new Error(`JSON parse error: ${pe.message}`);}
     }catch(e){if(e.name!=="AbortError"&&e.message!=="__auth__")setErr(e.message||"Assessment failed");}
     finally{setBusy(false);setBmsg("");assessAbort.current=null;}
   };
