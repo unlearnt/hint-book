@@ -3,8 +3,8 @@ import PAGES from "./hints/index.js";
 
 
 const ASSESS_MODELS=[
-  {id:"Qwen/Qwen3-VL-235B-A22B-Instruct",label:"Qwen3-VL-235B-A22B-Instruct"},
   {id:"Qwen/Qwen3-VL-30B-A3B-Instruct",label:"Qwen3-VL-30B-A3B-Instruct"},
+  {id:"Qwen/Qwen3-VL-235B-A22B-Instruct",label:"Qwen3-VL-235B-A22B-Instruct"},
   {id:"google/gemma-4-31B-it",label:"Gemma 4 31B"},
   {id:"moonshotai/Kimi-K2.6",label:"Kimi K2.6"},
   {id:"anthropic/claude-opus-4-7",label:"Claude Opus 4.7"},
