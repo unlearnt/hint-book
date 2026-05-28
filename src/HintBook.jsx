@@ -54,14 +54,14 @@ const lsSet=(k,v,evict)=>{
     else{console.warn("localStorage save failed:",e);}
   }
 };
-const mkPage=()=>({tabs:[{id:"t1",label:"Test 1",imgs:[],result:null,err:null}],activeTabId:"t1"});
+const mkPage=()=>({tabs:[{id:"t1",label:"Test 1",imgs:[],result:null,err:null}],activeTabId:"t1",nextTabNum:2});
 const dehydrate=store=>{const o={};for(const[id,d]of Object.entries(store)){o[id]={...d,tabs:(d.tabs||[]).map(tab=>({...tab,imgs:(tab.imgs||[]).map(({preview:_,...img})=>img)}))};delete o[id].imgs;delete o[id].result;delete o[id].err;}return o;};
 const hydrate=store=>{
   const o={};
   for(const[id,d]of Object.entries(store)){
-    // migrate old flat format {imgs,result,err} → tabs
-    const tabs=d.tabs||[{id:"t1",label:"Test 1",imgs:d.imgs||[],result:d.result||null,err:d.err||null}];
-    o[id]={tabs:tabs.map(tab=>({...tab,imgs:(tab.imgs||[]).map(img=>({...img,preview:`data:${img.mtype};base64,${img.base64}`}))})),activeTabId:d.activeTabId||tabs[0]?.id||"t1"};
+    // guard against empty tabs array; migrate old flat format {imgs,result,err} → tabs
+    const raw=d.tabs&&d.tabs.length>0?d.tabs:[{id:"t1",label:"Test 1",imgs:d.imgs||[],result:d.result||null,err:d.err||null}];
+    o[id]={tabs:raw.map(tab=>({...tab,imgs:(tab.imgs||[]).map(img=>({...img,preview:`data:${img.mtype};base64,${img.base64}`}))})),activeTabId:d.activeTabId||raw[0]?.id||"t1",nextTabNum:d.nextTabNum||raw.length+1};
   }
   return o;
 };
@@ -104,8 +104,8 @@ export default function HintBookApp(){
   const setActiveTab=id=>setPageStore(p=>({...p,[pgId]:{...(p[pgId]||mkPage()),activeTabId:id}}));
   const addTab=()=>{
     if(tabs.length>=5)return;
-    const id="t"+Date.now();const label="Test "+(tabs.length+1);
-    setPageStore(p=>{const d=p[pgId]||mkPage();return{...p,[pgId]:{tabs:[...d.tabs,{id,label,imgs:[],result:null,err:null}],activeTabId:id}};});
+    const id="t"+Date.now();
+    setPageStore(p=>{const d=p[pgId]||mkPage();const num=d.nextTabNum||d.tabs.length+1;return{...p,[pgId]:{...d,tabs:[...d.tabs,{id,label:"Test "+num,imgs:[],result:null,err:null}],activeTabId:id,nextTabNum:num+1}};});
   };
   const removeTab=id=>{
     if(tabs.length<=1)return;
