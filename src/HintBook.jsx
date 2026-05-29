@@ -60,6 +60,29 @@ const computeDiff=(pg,rA,rB)=>{
   disagreements.sort((a,b)=>SEV_RANK[a.severity]-SEV_RANK[b.severity]);
   return{total,agreements,agreementPct:total>0?agreements/total:0,verdictMatch:rA.verdict===rB.verdict,verdictA:rA.verdict,verdictB:rB.verdict,countsA:{criticalFails:rA.criticalFails,warnings:rA.warnings,passes:rA.passes,unverifiable:rA.unverifiable},countsB:{criticalFails:rB.criticalFails,warnings:rB.warnings,passes:rB.passes,unverifiable:rB.unverifiable},disagreements};
 };
+const tallySections=(pg,sections)=>{
+  let criticalFails=0,warnings=0,passes=0,unverifiable=0;const flagged=[];
+  for(const sec of pg.sections){
+    const rs=sections?.find(r=>r.id===sec.id);
+    for(const h of sec.hints){
+      const chk=rs?.checks?.find(c=>c.id===h[0]);
+      if(!chk){unverifiable++;continue;}
+      const exp=h[3],ans=chk.answer;
+      if(exp==="CONTEXT"){
+        if(ans==="UNVERIFIABLE")unverifiable++;
+        else if(ans==="WARN"){warnings++;if(chk.finding)flagged.push(chk.finding);}
+        else passes++;
+      }else{
+        const isCrit=(exp==="YES"&&ans==="NO")||(exp==="NO"&&ans==="YES");
+        if(isCrit){criticalFails++;if(chk.finding)flagged.push(chk.finding);}
+        else if(ans==="WARN"){warnings++;if(chk.finding)flagged.push(chk.finding);}
+        else if(ans==="UNVERIFIABLE"||ans==="CONTEXT")unverifiable++;
+        else passes++;
+      }
+    }
+  }
+  return{criticalFails,warnings,passes,unverifiable,flagged};
+};
 
 function resizeToBase64(dataUrl,mtype,maxSide=1024){
   return new Promise(resolve=>{
@@ -122,6 +145,7 @@ export default function HintBookApp(){
   const[benchModel,setBenchModel]=useState(()=>lsGet("hb_settings",{}).benchModel||"anthropic/claude-sonnet-4-6");
   const[benchBusy,setBenchBusy]=useState(false);
   const[benchErr,setBenchErr]=useState(null);
+  const[retrying,setRetrying]=useState(()=>new Set());
   const[streamThink,setStreamThink]=useState("");
   const[streamContent,setStreamContent]=useState("");
   const[genStreamThink,setGenStreamThink]=useState("");
@@ -287,27 +311,7 @@ Return JSON in exactly this shape (do not include verdict/counts — those are c
       const cleaned=raw.slice(s,e+1).replace(/,(\s*[}\]])/g,"$1");
       parsed=JSON.parse(cleaned);
     }catch(pe){throw new Error(`JSON parse error: ${pe.message}`);}
-    let criticalFails=0,warnings=0,passes=0,unverifiable=0;
-    const flagged=[];
-    for(const sec of pg.sections){
-      const rs=parsed.sections?.find(r=>r.id===sec.id);
-      for(const h of sec.hints){
-        const chk=rs?.checks?.find(c=>c.id===h[0]);
-        if(!chk){unverifiable++;continue;}
-        const exp=h[3],ans=chk.answer;
-        if(exp==="CONTEXT"){
-          if(ans==="UNVERIFIABLE")unverifiable++;
-          else if(ans==="WARN"){warnings++;if(chk.finding)flagged.push(chk.finding);}
-          else passes++;
-        }else{
-          const isCrit=(exp==="YES"&&ans==="NO")||(exp==="NO"&&ans==="YES");
-          if(isCrit){criticalFails++;if(chk.finding)flagged.push(chk.finding);}
-          else if(ans==="WARN"){warnings++;if(chk.finding)flagged.push(chk.finding);}
-          else if(ans==="UNVERIFIABLE"||ans==="CONTEXT")unverifiable++;
-          else passes++;
-        }
-      }
-    }
+    const{criticalFails,warnings,passes,unverifiable,flagged}=tallySections(pg,parsed.sections);
     const totalHints=pg.sections.reduce((a,s)=>a+s.hints.length,0);
     const verdict=deriveVerdict(criticalFails,warnings,passes,unverifiable,totalHints);
     const summary=parsed.summary||(criticalFails===0&&warnings===0
@@ -344,6 +348,68 @@ Return JSON in exactly this shape (do not include verdict/counts — those are c
   };
 
   const findQ=(sid,cid)=>pg.sections.find(s=>s.id===sid)?.hints.find(h=>h[0]===cid)?.[1]||cid;
+
+  const retryCheck=async(sectionId,checkId)=>{
+    if(!imgs.length||retrying.has(checkId))return;
+    const sec=pg.sections.find(s=>s.id===sectionId);
+    const hint=sec?.hints.find(h=>h[0]===checkId);
+    if(!sec||!hint)return;
+    setRetrying(prev=>{const n=new Set(prev);n.add(checkId);return n;});
+    const ctrl=new AbortController();
+    const pageThinking=useGuidance&&THINKING[pgId]?THINKING[pgId]:"";
+    const imgList=imgs.map((_,i)=>`${i}=${i===0?"front":i===1?"back":`image ${i+1}`}`).join(", ");
+    const systemPrompt=`You are an expert document forensics examiner. Re-examine a single specific check on the document image(s). Be rigorous and independent — do not assume the document is genuine. Answer with exactly one of YES, NO, WARN, UNVERIFIABLE, CONTEXT. If you cannot tell from the image, answer UNVERIFIABLE rather than guess. Return ONLY valid JSON.`;
+    const userText=`Document type: ${pg.title}
+${pageThinking?`\nEXPERT FORENSIC GUIDANCE:\n${pageThinking}\n`:""}
+Look at the image(s) carefully and re-assess ONE check:
+
+[${sec.id}] ${sec.title}
+${hint[0]}: ${hint[1]}${hint[2]?` [${hint[2]}]`:""}
+
+For NO or WARN answers, include "bbox" (normalized 0–1 [x1,y1,x2,y2]) and "imgIdx" (${imgList}). Otherwise omit both.
+
+Return JSON in exactly this shape:
+{"answer":"YES|NO|WARN|UNVERIFIABLE|CONTEXT","finding":"1 sentence naming what you observed","bbox":[0,0,0,0],"imgIdx":0}`;
+    try{
+      const raw=await streamSSE(
+        "/api/llm/chat/completions",
+        {model:assessModel,temperature:assessTemp,max_tokens:1024,messages:[
+          {role:"system",content:systemPrompt},
+          {role:"user",content:[
+            {type:"text",text:userText},
+            ...imgs.map(img=>({type:"image_url",image_url:{url:img.preview}}))
+          ]}
+        ]},
+        ()=>{},()=>{},
+        ctrl.signal
+      );
+      const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
+      if(s===-1||e===-1)throw new Error("No JSON in response");
+      const cleaned=raw.slice(s,e+1).replace(/,(\s*[}\]])/g,"$1");
+      const parsed=JSON.parse(cleaned);
+      if(!parsed.answer)throw new Error("Response missing answer field");
+      const updatedCheck={id:checkId,answer:parsed.answer,finding:parsed.finding||""};
+      if(parsed.bbox&&Array.isArray(parsed.bbox)&&parsed.bbox.length===4){updatedCheck.bbox=parsed.bbox;updatedCheck.imgIdx=typeof parsed.imgIdx==="number"?parsed.imgIdx:0;}
+      setPageStore(p=>{
+        const d=p[pgId]||mkPage();
+        const tab=d.tabs.find(t=>t.id===d.activeTabId);
+        if(!tab?.result)return p;
+        const existingSec=tab.result.sections?.find(rs=>rs.id===sectionId);
+        const newSections=existingSec
+          ?tab.result.sections.map(rs=>rs.id!==sectionId?rs:{...rs,checks:(rs.checks||[]).some(c=>c.id===checkId)?rs.checks.map(c=>c.id===checkId?updatedCheck:c):[...(rs.checks||[]),updatedCheck]})
+          :[...(tab.result.sections||[]),{id:sec.id,title:sec.title,checks:[updatedCheck]}];
+        const{criticalFails,warnings,passes,unverifiable}=tallySections(pg,newSections);
+        const totalHints=pg.sections.reduce((a,s)=>a+s.hints.length,0);
+        const verdict=deriveVerdict(criticalFails,warnings,passes,unverifiable,totalHints);
+        const newResult={...tab.result,sections:newSections,criticalFails,warnings,passes,unverifiable,verdict};
+        return updTab(p,d.activeTabId,{result:newResult});
+      });
+    }catch(ex){
+      if(ex.name!=="AbortError"&&ex.message!=="__auth__")console.warn(`Retry ${checkId} failed:`,ex);
+    }finally{
+      setRetrying(prev=>{const n=new Set(prev);n.delete(checkId);return n;});
+    }
+  };
 
   /* ── HINT PAGE GENERATION ── */
   const HINTBOOK_PROMPT=docType=>`You are an expert document forensics specialist building a "HintBook" — a structured checklist system for multimodal AI document fraud detection.
@@ -844,17 +910,24 @@ QUALITY REQUIREMENTS:
                       {fails===0&&warns===0&&<span style={{fontSize:"11px",background:"#f0fdf4",color:"#15803d",border:"1px solid #86efac",padding:"2px 8px",borderRadius:999,fontWeight:600}}>✓ pass</span>}
                     </div>
                   </div>
-                  {sec.checks?.map(c=>{const ac=AC(c.answer),ab=AB(c.answer),abd=ABd(c.answer),ai=AI(c.answer);const bboxImg=c.bbox&&Array.isArray(c.bbox)&&c.bbox.length===4?imgs[c.imgIdx||0]:null;return(
-                    <div key={c.id} className="row" style={{padding:"8px 13px",borderBottom:"1px solid #f8fafc",display:"grid",gridTemplateColumns:"17px 1fr 84px",gap:9,alignItems:"start",transition:"background .1s"}}>
-                      <i className={`ti ${ai}`} style={{fontSize:14,color:ac,paddingTop:2}}/>
+                  {sec.checks?.map(c=>{const ac=AC(c.answer),ab=AB(c.answer),abd=ABd(c.answer),ai=AI(c.answer);const bboxImg=c.bbox&&Array.isArray(c.bbox)&&c.bbox.length===4?imgs[c.imgIdx||0]:null;const isRetrying=retrying.has(c.id);return(
+                    <div key={c.id} className="row" style={{padding:"8px 13px",borderBottom:"1px solid #f8fafc",display:"grid",gridTemplateColumns:"17px 1fr 84px",gap:9,alignItems:"start",transition:"background .1s",opacity:isRetrying?0.6:1}}>
+                      <i className={`ti ${isRetrying?"ti-loader sp":ai}`} style={{fontSize:14,color:isRetrying?"#2563eb":ac,paddingTop:2}}/>
                       <div>
                         <div style={{fontSize:"12px",color:"#1e293b",lineHeight:1.45,fontWeight:500}}>{findQ(sec.id,c.id)}</div>
                         {c.finding&&<div style={{fontSize:"11px",color:"#64748b",marginTop:3,lineHeight:1.45}}>{c.finding}</div>}
-                        {bboxImg&&<button onClick={()=>setLightbox({url:bboxImg.preview,bbox:c.bbox,label:`${c.id} · ${c.answer}`,labelColor:ac})}
-                          style={{marginTop:5,display:"inline-flex",alignItems:"center",gap:4,fontSize:"10px",padding:"2px 7px",borderRadius:5,border:`1px solid ${abd}`,background:ab,color:ac,cursor:"pointer",fontFamily:"system-ui,sans-serif",fontWeight:600}}
-                          onMouseEnter={e=>e.currentTarget.style.filter="brightness(0.96)"} onMouseLeave={e=>e.currentTarget.style.filter=""}>
-                          <i className="ti ti-crop" style={{fontSize:11}}/>View region
-                        </button>}
+                        <div style={{display:"flex",gap:5,marginTop:5,flexWrap:"wrap"}}>
+                          {bboxImg&&<button onClick={()=>setLightbox({url:bboxImg.preview,bbox:c.bbox,label:`${c.id} · ${c.answer}`,labelColor:ac})}
+                            style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:"10px",padding:"2px 7px",borderRadius:5,border:`1px solid ${abd}`,background:ab,color:ac,cursor:"pointer",fontFamily:"system-ui,sans-serif",fontWeight:600}}
+                            onMouseEnter={e=>e.currentTarget.style.filter="brightness(0.96)"} onMouseLeave={e=>e.currentTarget.style.filter=""}>
+                            <i className="ti ti-crop" style={{fontSize:11}}/>View region
+                          </button>}
+                          <button onClick={()=>retryCheck(sec.id,c.id)} disabled={isRetrying||busy||!imgs.length}
+                            style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:"10px",padding:"2px 7px",borderRadius:5,border:"1px solid #e2e8f0",background:isRetrying?"#eff6ff":"#f8fafc",color:isRetrying?"#2563eb":"#475569",cursor:isRetrying?"wait":busy||!imgs.length?"not-allowed":"pointer",fontFamily:"system-ui,sans-serif",fontWeight:600,opacity:busy||!imgs.length?0.5:1}}
+                            onMouseEnter={e=>{if(!isRetrying&&!busy&&imgs.length)e.currentTarget.style.background="#f1f5f9";}} onMouseLeave={e=>{if(!isRetrying)e.currentTarget.style.background="#f8fafc";}}>
+                            <i className={`ti ${isRetrying?"ti-loader sp":"ti-refresh"}`} style={{fontSize:11}}/>{isRetrying?"Retrying…":"Retry"}
+                          </button>
+                        </div>
                       </div>
                       <div style={{textAlign:"right",paddingTop:1}}><span style={{fontSize:"11px",padding:"2px 8px",borderRadius:999,fontWeight:700,background:ab,color:ac,border:`1px solid ${abd}`,display:"inline-block"}}>{c.answer}</span></div>
                     </div>
