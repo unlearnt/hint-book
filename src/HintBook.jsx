@@ -29,6 +29,12 @@ const VCFG={
   APPEARS_LEGITIMATE:{bg:"#f0fdf4",border:"#16a34a",text:"#14532d",label:"Appears legitimate",icon:"ti-shield-check"},
   CANNOT_DETERMINE:{bg:"#f8fafc",border:"#64748b",text:"#1e293b",label:"Cannot determine — insufficient visual data",icon:"ti-help"},
 };
+const deriveVerdict=(c,w,p,u,total)=>{
+  if(c>=2)return"HIGHLY_SUSPICIOUS";
+  if(c===1||w>=3)return"SUSPICIOUS";
+  if(p+w<total*0.4)return"CANNOT_DETERMINE";
+  return"APPEARS_LEGITIMATE";
+};
 
 function resizeToBase64(dataUrl,mtype,maxSide=1024){
   return new Promise(resolve=>{
@@ -208,20 +214,79 @@ export default function HintBookApp(){
     const ctrl=new AbortController();assessAbort.current=ctrl;
     setBusy(true);setErr(null);setResult(null);setStreamThink("");setStreamContent("");
     try{
-      const qs=pg.sections.map(s=>`[${s.id}] ${s.title}\n`+s.hints.map(h=>`  ${h[0]} (expect:${h[3]}): ${h[1]}${h[2]?` [${h[2]}]`:""}`).join("\n")).join("\n\n");
+      const qs=pg.sections.map(s=>`[${s.id}] ${s.title}\n`+s.hints.map(h=>`  ${h[0]}: ${h[1]}${h[2]?` [${h[2]}]`:""}`).join("\n")).join("\n\n");
       const pageThinking=useGuidance&&THINKING[pgId]?THINKING[pgId]:"";
+      const systemPrompt=`You are an expert document forensics examiner. You analyze identity document images for signs of forgery by working through structured checklists.
+
+Answer each check with exactly one of:
+- YES — feature confirmed present as described
+- NO — feature absent, wrong, or anomalous (potential red flag)
+- WARN — borderline, degraded, or ambiguous; warrants closer inspection
+- UNVERIFIABLE — cannot determine from the image (resolution, glare, crop, missing side, etc.)
+- CONTEXT — generation-dependent or descriptive question; describe what you observe
+
+Be rigorous and independent. Do not assume the document is genuine. If a check's precondition does not apply to this document (e.g. "if under 21…" on a 30-year-old's card), answer UNVERIFIABLE. If you cannot tell from the image, answer UNVERIFIABLE rather than guess.
+
+Return ONLY valid JSON in the exact schema requested, with no markdown fences, no commentary, no preamble.`;
+      const userText=`Document type: ${pg.title}
+${pageThinking?`\nEXPERT FORENSIC GUIDANCE (applies to whole document):\n${pageThinking}\n`:""}
+Work through the following checklist against the attached document image(s). Provide a 1-sentence finding per check that names what you actually observed.
+
+CHECKLIST:
+${qs}
+
+Return JSON in exactly this shape (do not include verdict/counts — those are computed downstream):
+{"summary":"2-3 sentence assessment naming specific anomalies, or confirming the document looks consistent","sections":[{"id":"","title":"","checks":[{"id":"","answer":"YES|NO|WARN|UNVERIFIABLE|CONTEXT","finding":"1 sentence"}]}]}`;
       const raw=await streamSSE(
         "/api/llm/chat/completions",
-        {model:assessModel,temperature:assessTemp,max_tokens:assessMaxTok,messages:[{role:"user",content:[
-          ...imgs.map(img=>({type:"image_url",image_url:{url:img.preview}})),
-          {type:"text",text:`You are an expert document fraud detection AI. Analyze the provided image(s) of a "${pg.title}" document against this checklist.\n\nAnswer: YES (confirmed), NO (anomaly/red flag), WARN (borderline), UNVERIFIABLE (can't determine from image), CONTEXT (generation-dependent — describe what you observe).\ncriticalFails = (NO where expect=YES) + (YES where expect=NO). warnings = WARN count. passes = correct YES/NO answers. unverifiable = UNVERIFIABLE + CONTEXT count.\nProvide a 1-sentence finding per check.\n${pageThinking?`\nEXPERT FORENSIC GUIDANCE:\n${pageThinking}\n`:""}\nCHECKLIST:\n${qs}\n\nReturn ONLY valid JSON, no markdown fences:\n{"verdict":"HIGHLY_SUSPICIOUS|SUSPICIOUS|APPEARS_LEGITIMATE|CANNOT_DETERMINE","summary":"2-3 sentence assessment naming specific anomalies","criticalFails":0,"warnings":0,"passes":0,"unverifiable":0,"sections":[{"id":"","title":"","checks":[{"id":"","answer":"YES|NO|WARN|UNVERIFIABLE|CONTEXT","finding":"1 sentence"}]}]}`}
-        ]}]},
+        {model:assessModel,temperature:assessTemp,max_tokens:assessMaxTok,messages:[
+          {role:"system",content:systemPrompt},
+          {role:"user",content:[
+            {type:"text",text:userText},
+            ...imgs.map(img=>({type:"image_url",image_url:{url:img.preview}}))
+          ]}
+        ]},
         setStreamThink,
         setStreamContent,
         ctrl.signal
       );
-      try{const s=raw.indexOf("{"),e=raw.lastIndexOf("}");if(s===-1||e===-1)throw new Error("No JSON object found in response");const cleaned=raw.slice(s,e+1).replace(/,(\s*[}\]])/g,"$1");const parsed=JSON.parse(cleaned);setPageStore(p=>{const d=p[pgId]||mkPage();return updTab(p,d.activeTabId,{result:parsed,model:assessModel,guidanceUsed:useGuidance&&!!THINKING[pgId]});});}
-      catch(pe){throw new Error(`JSON parse error: ${pe.message}`);}
+      let parsed;
+      try{
+        const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
+        if(s===-1||e===-1)throw new Error("No JSON object found in response");
+        const cleaned=raw.slice(s,e+1).replace(/,(\s*[}\]])/g,"$1");
+        parsed=JSON.parse(cleaned);
+      }catch(pe){throw new Error(`JSON parse error: ${pe.message}`);}
+      // Recompute counts deterministically from per-check answers (ignoring any model-reported totals).
+      // expect=CONTEXT hints are descriptive — any concrete answer is informational, only UNVERIFIABLE/WARN dock the score.
+      let criticalFails=0,warnings=0,passes=0,unverifiable=0;
+      const flagged=[];
+      for(const sec of pg.sections){
+        const rs=parsed.sections?.find(r=>r.id===sec.id);
+        for(const h of sec.hints){
+          const chk=rs?.checks?.find(c=>c.id===h[0]);
+          if(!chk){unverifiable++;continue;}
+          const exp=h[3],ans=chk.answer;
+          if(exp==="CONTEXT"){
+            if(ans==="UNVERIFIABLE")unverifiable++;
+            else if(ans==="WARN"){warnings++;if(chk.finding)flagged.push(chk.finding);}
+            else passes++;
+          }else{
+            const isCrit=(exp==="YES"&&ans==="NO")||(exp==="NO"&&ans==="YES");
+            if(isCrit){criticalFails++;if(chk.finding)flagged.push(chk.finding);}
+            else if(ans==="WARN"){warnings++;if(chk.finding)flagged.push(chk.finding);}
+            else if(ans==="UNVERIFIABLE"||ans==="CONTEXT")unverifiable++;
+            else passes++;
+          }
+        }
+      }
+      const totalHints=pg.sections.reduce((a,s)=>a+s.hints.length,0);
+      const verdict=deriveVerdict(criticalFails,warnings,passes,unverifiable,totalHints);
+      const summary=parsed.summary||(criticalFails===0&&warnings===0
+        ?`All ${totalHints} checks passed without anomalies.`
+        :`${criticalFails} critical fail${criticalFails!==1?"s":""}, ${warnings} warning${warnings!==1?"s":""}, ${unverifiable} unverifiable across ${totalHints} checks.${flagged.length?" "+flagged.slice(0,2).join(" "):""}`);
+      const finalResult={verdict,summary,criticalFails,warnings,passes,unverifiable,sections:parsed.sections||[]};
+      setPageStore(p=>{const d=p[pgId]||mkPage();return updTab(p,d.activeTabId,{result:finalResult,model:assessModel,guidanceUsed:useGuidance&&!!THINKING[pgId]});});
     }catch(e){if(e.name!=="AbortError"&&e.message!=="__auth__")setErr(e.message||"Assessment failed");}
     finally{setBusy(false);setBmsg("");assessAbort.current=null;}
   };
