@@ -252,15 +252,21 @@ Answer each check with exactly one of:
 Be rigorous and independent. Do not assume the document is genuine. If a check's precondition does not apply to this document (e.g. "if under 21…" on a 30-year-old's card), answer UNVERIFIABLE. If you cannot tell from the image, answer UNVERIFIABLE rather than guess.
 
 Return ONLY valid JSON in the exact schema requested, with no markdown fences, no commentary, no preamble.`;
+    const imgList=imgs.map((_,i)=>`${i}=${i===0?"front":i===1?"back":`image ${i+1}`}`).join(", ");
     const userText=`Document type: ${pg.title}
 ${pageThinking?`\nEXPERT FORENSIC GUIDANCE (applies to whole document):\n${pageThinking}\n`:""}
 Work through the following checklist against the attached document image(s). Provide a 1-sentence finding per check that names what you actually observed.
+
+REGION ANNOTATION:
+- For checks where answer is NO or WARN, include a "bbox" with normalized 0–1 coordinates [x1, y1, x2, y2] (left, top, right, bottom as fractions of image dimensions) of the region your finding refers to, plus "imgIdx" (${imgList}).
+- For YES, UNVERIFIABLE, or CONTEXT answers — and for absence-based checks where no specific region applies — OMIT the bbox and imgIdx fields entirely. Do not invent regions.
+- bbox example: [0.12, 0.34, 0.28, 0.41] = a box from 12% across, 34% down, to 28% across, 41% down.
 
 CHECKLIST:
 ${qs}
 
 Return JSON in exactly this shape (do not include verdict/counts — those are computed downstream):
-{"summary":"2-3 sentence assessment naming specific anomalies, or confirming the document looks consistent","sections":[{"id":"","title":"","checks":[{"id":"","answer":"YES|NO|WARN|UNVERIFIABLE|CONTEXT","finding":"1 sentence"}]}]}`;
+{"summary":"2-3 sentence assessment naming specific anomalies, or confirming the document looks consistent","sections":[{"id":"","title":"","checks":[{"id":"","answer":"YES|NO|WARN|UNVERIFIABLE|CONTEXT","finding":"1 sentence","bbox":[0,0,0,0],"imgIdx":0}]}]}`;
     const raw=await streamSSE(
       "/api/llm/chat/completions",
       {model,temperature:assessTemp,max_tokens:assessMaxTok,messages:[
@@ -718,7 +724,7 @@ QUALITY REQUIREMENTS:
                 <div style={{display:"flex",gap:12,height:"100%"}}>
                   {imgs.map((img,i)=>(
                     <div key={i} style={{flex:1,position:"relative",background:"#f8fafc",borderRadius:10,border:"1px solid #e2e8f0",overflow:"hidden",display:"flex",flexDirection:"column"}}>
-                      <div onClick={()=>setLightbox(img.preview)} style={{flex:1,minHeight:0,display:"flex",alignItems:"center",justifyContent:"center",padding:"8px",background:"#f8fafc",cursor:"zoom-in"}}>
+                      <div onClick={()=>setLightbox({url:img.preview})} style={{flex:1,minHeight:0,display:"flex",alignItems:"center",justifyContent:"center",padding:"8px",background:"#f8fafc",cursor:"zoom-in"}}>
                         <img src={img.preview} alt={`doc${i+1}`} style={{maxWidth:"100%",maxHeight:"100%",width:"auto",height:"auto",objectFit:"contain",display:"block",borderRadius:6,boxShadow:"0 1px 6px rgba(0,0,0,.12)"}}/>
                       </div>
                       <div style={{flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 10px",background:"#f1f5f9",borderTop:"1px solid #e2e8f0"}}>
@@ -838,10 +844,18 @@ QUALITY REQUIREMENTS:
                       {fails===0&&warns===0&&<span style={{fontSize:"11px",background:"#f0fdf4",color:"#15803d",border:"1px solid #86efac",padding:"2px 8px",borderRadius:999,fontWeight:600}}>✓ pass</span>}
                     </div>
                   </div>
-                  {sec.checks?.map(c=>{const ac=AC(c.answer),ab=AB(c.answer),abd=ABd(c.answer),ai=AI(c.answer);return(
+                  {sec.checks?.map(c=>{const ac=AC(c.answer),ab=AB(c.answer),abd=ABd(c.answer),ai=AI(c.answer);const bboxImg=c.bbox&&Array.isArray(c.bbox)&&c.bbox.length===4?imgs[c.imgIdx||0]:null;return(
                     <div key={c.id} className="row" style={{padding:"8px 13px",borderBottom:"1px solid #f8fafc",display:"grid",gridTemplateColumns:"17px 1fr 84px",gap:9,alignItems:"start",transition:"background .1s"}}>
                       <i className={`ti ${ai}`} style={{fontSize:14,color:ac,paddingTop:2}}/>
-                      <div><div style={{fontSize:"12px",color:"#1e293b",lineHeight:1.45,fontWeight:500}}>{findQ(sec.id,c.id)}</div>{c.finding&&<div style={{fontSize:"11px",color:"#64748b",marginTop:3,lineHeight:1.45}}>{c.finding}</div>}</div>
+                      <div>
+                        <div style={{fontSize:"12px",color:"#1e293b",lineHeight:1.45,fontWeight:500}}>{findQ(sec.id,c.id)}</div>
+                        {c.finding&&<div style={{fontSize:"11px",color:"#64748b",marginTop:3,lineHeight:1.45}}>{c.finding}</div>}
+                        {bboxImg&&<button onClick={()=>setLightbox({url:bboxImg.preview,bbox:c.bbox,label:`${c.id} · ${c.answer}`,labelColor:ac})}
+                          style={{marginTop:5,display:"inline-flex",alignItems:"center",gap:4,fontSize:"10px",padding:"2px 7px",borderRadius:5,border:`1px solid ${abd}`,background:ab,color:ac,cursor:"pointer",fontFamily:"system-ui,sans-serif",fontWeight:600}}
+                          onMouseEnter={e=>e.currentTarget.style.filter="brightness(0.96)"} onMouseLeave={e=>e.currentTarget.style.filter=""}>
+                          <i className="ti ti-crop" style={{fontSize:11}}/>View region
+                        </button>}
+                      </div>
                       <div style={{textAlign:"right",paddingTop:1}}><span style={{fontSize:"11px",padding:"2px 8px",borderRadius:999,fontWeight:700,background:ab,color:ac,border:`1px solid ${abd}`,display:"inline-block"}}>{c.answer}</span></div>
                     </div>
                   );})}
@@ -851,14 +865,26 @@ QUALITY REQUIREMENTS:
           </div>
         </div>
       </div>
-      {lightbox&&(
+      {lightbox&&(()=>{const lb=typeof lightbox==="string"?{url:lightbox}:lightbox;const bb=lb.bbox;const stroke=lb.labelColor||"#dc2626";return(
         <div onClick={()=>setLightbox(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.85)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",cursor:"zoom-out"}}>
-          <img src={lightbox} onClick={e=>e.stopPropagation()} style={{maxWidth:"90vw",maxHeight:"90vh",objectFit:"contain",borderRadius:8,boxShadow:"0 8px 48px rgba(0,0,0,.6)"}}/>
+          <div onClick={e=>e.stopPropagation()} style={{position:"relative",display:"inline-block",maxWidth:"90vw",maxHeight:"90vh",cursor:"default"}}>
+            <img src={lb.url} style={{maxWidth:"90vw",maxHeight:"90vh",objectFit:"contain",borderRadius:8,boxShadow:"0 8px 48px rgba(0,0,0,.6)",display:"block"}}/>
+            {bb&&Array.isArray(bb)&&bb.length===4&&(
+              <svg viewBox="0 0 1 1" preserveAspectRatio="none" style={{position:"absolute",inset:0,width:"100%",height:"100%",pointerEvents:"none",borderRadius:8}}>
+                <rect x={Math.max(0,Math.min(1,bb[0]))} y={Math.max(0,Math.min(1,bb[1]))} width={Math.max(0,Math.min(1,bb[2]-bb[0]))} height={Math.max(0,Math.min(1,bb[3]-bb[1]))} fill={stroke+"22"} stroke={stroke} strokeWidth="0.007"/>
+              </svg>
+            )}
+            {lb.label&&(
+              <div style={{position:"absolute",top:8,left:8,padding:"4px 10px",background:"rgba(0,0,0,.75)",color:"white",borderRadius:6,fontSize:"11px",fontWeight:600,fontFamily:"system-ui,sans-serif",display:"flex",alignItems:"center",gap:6}}>
+                <span style={{width:8,height:8,borderRadius:2,background:stroke,display:"inline-block"}}/>{lb.label}
+              </div>
+            )}
+          </div>
           <button onClick={()=>setLightbox(null)} style={{position:"absolute",top:16,right:16,background:"rgba(255,255,255,.15)",border:"none",borderRadius:"50%",width:36,height:36,cursor:"pointer",color:"white",display:"flex",alignItems:"center",justifyContent:"center"}}>
             <i className="ti ti-x" style={{fontSize:16}}/>
           </button>
         </div>
-      )}
+      );})()}
       {showThinking&&THINKING[pgId]&&(
         <div onClick={()=>setShowThinking(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
           <div onClick={e=>e.stopPropagation()} style={{background:"white",borderRadius:14,width:"100%",maxWidth:640,maxHeight:"80vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(0,0,0,.4)",overflow:"hidden"}}>
