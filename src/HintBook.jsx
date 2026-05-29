@@ -35,6 +35,31 @@ const deriveVerdict=(c,w,p,u,total)=>{
   if(p+w<total*0.4)return"CANNOT_DETERMINE";
   return"APPEARS_LEGITIMATE";
 };
+const SEV_RANK={critical:0,medium:1,minor:2};
+const computeDiff=(pg,rA,rB)=>{
+  let agreements=0;const disagreements=[];let total=0;
+  for(const sec of pg.sections){
+    const rsA=rA.sections?.find(r=>r.id===sec.id);
+    const rsB=rB.sections?.find(r=>r.id===sec.id);
+    for(const h of sec.hints){
+      total++;
+      const chkA=rsA?.checks?.find(c=>c.id===h[0]);
+      const chkB=rsB?.checks?.find(c=>c.id===h[0]);
+      const ansA=chkA?.answer||"MISSING";
+      const ansB=chkB?.answer||"MISSING";
+      if(ansA===ansB){agreements++;continue;}
+      const exp=h[3];
+      const isCritA=(exp==="YES"&&ansA==="NO")||(exp==="NO"&&ansA==="YES");
+      const isCritB=(exp==="YES"&&ansB==="NO")||(exp==="NO"&&ansB==="YES");
+      let severity="minor";
+      if(isCritA!==isCritB)severity="critical";
+      else if(ansA==="WARN"||ansB==="WARN")severity="medium";
+      disagreements.push({sectionId:sec.id,sectionTitle:sec.title,checkId:h[0],question:h[1],expect:exp,answerA:ansA,findingA:chkA?.finding||"",answerB:ansB,findingB:chkB?.finding||"",severity});
+    }
+  }
+  disagreements.sort((a,b)=>SEV_RANK[a.severity]-SEV_RANK[b.severity]);
+  return{total,agreements,agreementPct:total>0?agreements/total:0,verdictMatch:rA.verdict===rB.verdict,verdictA:rA.verdict,verdictB:rB.verdict,countsA:{criticalFails:rA.criticalFails,warnings:rA.warnings,passes:rA.passes,unverifiable:rA.unverifiable},countsB:{criticalFails:rB.criticalFails,warnings:rB.warnings,passes:rB.passes,unverifiable:rB.unverifiable},disagreements};
+};
 
 function resizeToBase64(dataUrl,mtype,maxSide=1024){
   return new Promise(resolve=>{
@@ -94,6 +119,9 @@ export default function HintBookApp(){
   const[genTemp,setGenTemp]=useState(()=>lsGet("hb_settings",{}).genTemp??0.4);
   const[genMaxTok,setGenMaxTok]=useState(()=>lsGet("hb_settings",{}).genMaxTok||8192);
   const[useGuidance,setUseGuidance]=useState(()=>lsGet("hb_settings",{}).useGuidance??true);
+  const[benchModel,setBenchModel]=useState(()=>lsGet("hb_settings",{}).benchModel||"anthropic/claude-sonnet-4-6");
+  const[benchBusy,setBenchBusy]=useState(false);
+  const[benchErr,setBenchErr]=useState(null);
   const[streamThink,setStreamThink]=useState("");
   const[streamContent,setStreamContent]=useState("");
   const[genStreamThink,setGenStreamThink]=useState("");
@@ -101,7 +129,7 @@ export default function HintBookApp(){
   const fileRef=useRef();const addRef=useRef();const loadRef=useRef();
   const addInputRef=useRef();const leaveTimer=useRef();const addPanelRef=useRef();
   const dragging=useRef(false);const dragX=useRef(0);const dragW=useRef(0);
-  const assessAbort=useRef(null);const genAbort=useRef(null);
+  const assessAbort=useRef(null);const genAbort=useRef(null);const benchAbort=useRef(null);
   const pgData=pageStore[pgId]||mkPage();
   const{tabs,activeTabId}=pgData;
   const activeTab=tabs.find(t=>t.id===activeTabId)||tabs[0]||{};
@@ -181,7 +209,7 @@ export default function HintBookApp(){
     lsSet("hb_pageStore",dehydrate(pageStore),s=>evict(s));
   },[pageStore]);
   useEffect(()=>{lsSet("hb_dynPages",dynPages);},[dynPages]);
-  useEffect(()=>{lsSet("hb_settings",{assessModel,genModel,assessTemp,assessMaxTok,genTemp,genMaxTok,centerW,useGuidance});},[assessModel,genModel,assessTemp,assessMaxTok,genTemp,genMaxTok,centerW,useGuidance]);
+  useEffect(()=>{lsSet("hb_settings",{assessModel,genModel,assessTemp,assessMaxTok,genTemp,genMaxTok,centerW,useGuidance,benchModel});},[assessModel,genModel,assessTemp,assessMaxTok,genTemp,genMaxTok,centerW,useGuidance,benchModel]);
 
   useEffect(()=>{
     const onMove=e=>{if(!dragging.current)return;const d=e.clientX-dragX.current;setCenterW(Math.max(180,Math.min(520,dragW.current+d)));};
@@ -209,14 +237,10 @@ export default function HintBookApp(){
     });
   };
 
-  const doAssess=async()=>{
-    if(!imgs.length||busy)return;
-    const ctrl=new AbortController();assessAbort.current=ctrl;
-    setBusy(true);setErr(null);setResult(null);setStreamThink("");setStreamContent("");
-    try{
-      const qs=pg.sections.map(s=>`[${s.id}] ${s.title}\n`+s.hints.map(h=>`  ${h[0]}: ${h[1]}${h[2]?` [${h[2]}]`:""}`).join("\n")).join("\n\n");
-      const pageThinking=useGuidance&&THINKING[pgId]?THINKING[pgId]:"";
-      const systemPrompt=`You are an expert document forensics examiner. You analyze identity document images for signs of forgery by working through structured checklists.
+  const runAssessment=async(model,signal,onThink,onContent)=>{
+    const qs=pg.sections.map(s=>`[${s.id}] ${s.title}\n`+s.hints.map(h=>`  ${h[0]}: ${h[1]}${h[2]?` [${h[2]}]`:""}`).join("\n")).join("\n\n");
+    const pageThinking=useGuidance&&THINKING[pgId]?THINKING[pgId]:"";
+    const systemPrompt=`You are an expert document forensics examiner. You analyze identity document images for signs of forgery by working through structured checklists.
 
 Answer each check with exactly one of:
 - YES — feature confirmed present as described
@@ -228,7 +252,7 @@ Answer each check with exactly one of:
 Be rigorous and independent. Do not assume the document is genuine. If a check's precondition does not apply to this document (e.g. "if under 21…" on a 30-year-old's card), answer UNVERIFIABLE. If you cannot tell from the image, answer UNVERIFIABLE rather than guess.
 
 Return ONLY valid JSON in the exact schema requested, with no markdown fences, no commentary, no preamble.`;
-      const userText=`Document type: ${pg.title}
+    const userText=`Document type: ${pg.title}
 ${pageThinking?`\nEXPERT FORENSIC GUIDANCE (applies to whole document):\n${pageThinking}\n`:""}
 Work through the following checklist against the attached document image(s). Provide a 1-sentence finding per check that names what you actually observed.
 
@@ -237,58 +261,80 @@ ${qs}
 
 Return JSON in exactly this shape (do not include verdict/counts — those are computed downstream):
 {"summary":"2-3 sentence assessment naming specific anomalies, or confirming the document looks consistent","sections":[{"id":"","title":"","checks":[{"id":"","answer":"YES|NO|WARN|UNVERIFIABLE|CONTEXT","finding":"1 sentence"}]}]}`;
-      const raw=await streamSSE(
-        "/api/llm/chat/completions",
-        {model:assessModel,temperature:assessTemp,max_tokens:assessMaxTok,messages:[
-          {role:"system",content:systemPrompt},
-          {role:"user",content:[
-            {type:"text",text:userText},
-            ...imgs.map(img=>({type:"image_url",image_url:{url:img.preview}}))
-          ]}
-        ]},
-        setStreamThink,
-        setStreamContent,
-        ctrl.signal
-      );
-      let parsed;
-      try{
-        const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
-        if(s===-1||e===-1)throw new Error("No JSON object found in response");
-        const cleaned=raw.slice(s,e+1).replace(/,(\s*[}\]])/g,"$1");
-        parsed=JSON.parse(cleaned);
-      }catch(pe){throw new Error(`JSON parse error: ${pe.message}`);}
-      // Recompute counts deterministically from per-check answers (ignoring any model-reported totals).
-      // expect=CONTEXT hints are descriptive — any concrete answer is informational, only UNVERIFIABLE/WARN dock the score.
-      let criticalFails=0,warnings=0,passes=0,unverifiable=0;
-      const flagged=[];
-      for(const sec of pg.sections){
-        const rs=parsed.sections?.find(r=>r.id===sec.id);
-        for(const h of sec.hints){
-          const chk=rs?.checks?.find(c=>c.id===h[0]);
-          if(!chk){unverifiable++;continue;}
-          const exp=h[3],ans=chk.answer;
-          if(exp==="CONTEXT"){
-            if(ans==="UNVERIFIABLE")unverifiable++;
-            else if(ans==="WARN"){warnings++;if(chk.finding)flagged.push(chk.finding);}
-            else passes++;
-          }else{
-            const isCrit=(exp==="YES"&&ans==="NO")||(exp==="NO"&&ans==="YES");
-            if(isCrit){criticalFails++;if(chk.finding)flagged.push(chk.finding);}
-            else if(ans==="WARN"){warnings++;if(chk.finding)flagged.push(chk.finding);}
-            else if(ans==="UNVERIFIABLE"||ans==="CONTEXT")unverifiable++;
-            else passes++;
-          }
+    const raw=await streamSSE(
+      "/api/llm/chat/completions",
+      {model,temperature:assessTemp,max_tokens:assessMaxTok,messages:[
+        {role:"system",content:systemPrompt},
+        {role:"user",content:[
+          {type:"text",text:userText},
+          ...imgs.map(img=>({type:"image_url",image_url:{url:img.preview}}))
+        ]}
+      ]},
+      onThink,
+      onContent,
+      signal
+    );
+    let parsed;
+    try{
+      const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
+      if(s===-1||e===-1)throw new Error("No JSON object found in response");
+      const cleaned=raw.slice(s,e+1).replace(/,(\s*[}\]])/g,"$1");
+      parsed=JSON.parse(cleaned);
+    }catch(pe){throw new Error(`JSON parse error: ${pe.message}`);}
+    let criticalFails=0,warnings=0,passes=0,unverifiable=0;
+    const flagged=[];
+    for(const sec of pg.sections){
+      const rs=parsed.sections?.find(r=>r.id===sec.id);
+      for(const h of sec.hints){
+        const chk=rs?.checks?.find(c=>c.id===h[0]);
+        if(!chk){unverifiable++;continue;}
+        const exp=h[3],ans=chk.answer;
+        if(exp==="CONTEXT"){
+          if(ans==="UNVERIFIABLE")unverifiable++;
+          else if(ans==="WARN"){warnings++;if(chk.finding)flagged.push(chk.finding);}
+          else passes++;
+        }else{
+          const isCrit=(exp==="YES"&&ans==="NO")||(exp==="NO"&&ans==="YES");
+          if(isCrit){criticalFails++;if(chk.finding)flagged.push(chk.finding);}
+          else if(ans==="WARN"){warnings++;if(chk.finding)flagged.push(chk.finding);}
+          else if(ans==="UNVERIFIABLE"||ans==="CONTEXT")unverifiable++;
+          else passes++;
         }
       }
-      const totalHints=pg.sections.reduce((a,s)=>a+s.hints.length,0);
-      const verdict=deriveVerdict(criticalFails,warnings,passes,unverifiable,totalHints);
-      const summary=parsed.summary||(criticalFails===0&&warnings===0
-        ?`All ${totalHints} checks passed without anomalies.`
-        :`${criticalFails} critical fail${criticalFails!==1?"s":""}, ${warnings} warning${warnings!==1?"s":""}, ${unverifiable} unverifiable across ${totalHints} checks.${flagged.length?" "+flagged.slice(0,2).join(" "):""}`);
-      const finalResult={verdict,summary,criticalFails,warnings,passes,unverifiable,sections:parsed.sections||[]};
-      setPageStore(p=>{const d=p[pgId]||mkPage();return updTab(p,d.activeTabId,{result:finalResult,model:assessModel,guidanceUsed:useGuidance&&!!THINKING[pgId]});});
+    }
+    const totalHints=pg.sections.reduce((a,s)=>a+s.hints.length,0);
+    const verdict=deriveVerdict(criticalFails,warnings,passes,unverifiable,totalHints);
+    const summary=parsed.summary||(criticalFails===0&&warnings===0
+      ?`All ${totalHints} checks passed without anomalies.`
+      :`${criticalFails} critical fail${criticalFails!==1?"s":""}, ${warnings} warning${warnings!==1?"s":""}, ${unverifiable} unverifiable across ${totalHints} checks.${flagged.length?" "+flagged.slice(0,2).join(" "):""}`);
+    return{verdict,summary,criticalFails,warnings,passes,unverifiable,sections:parsed.sections||[]};
+  };
+
+  const doAssess=async()=>{
+    if(!imgs.length||busy)return;
+    const ctrl=new AbortController();assessAbort.current=ctrl;
+    setBusy(true);setErr(null);setResult(null);setStreamThink("");setStreamContent("");
+    try{
+      const finalResult=await runAssessment(assessModel,ctrl.signal,setStreamThink,setStreamContent);
+      setPageStore(p=>{const d=p[pgId]||mkPage();return updTab(p,d.activeTabId,{result:finalResult,model:assessModel,guidanceUsed:useGuidance&&!!THINKING[pgId],bench:null});});
     }catch(e){if(e.name!=="AbortError"&&e.message!=="__auth__")setErr(e.message||"Assessment failed");}
     finally{setBusy(false);setBmsg("");assessAbort.current=null;}
+  };
+
+  const doBenchmark=async()=>{
+    if(!imgs.length||busy||benchBusy)return;
+    const ctrl=new AbortController();benchAbort.current=ctrl;assessAbort.current=ctrl;
+    setBusy(true);setBenchBusy(true);setErr(null);setBenchErr(null);setResult(null);setStreamThink("");setStreamContent("");
+    try{
+      // Primary streams into the visible thinking/content panes; baseline runs silently in parallel.
+      const [primary,baseline]=await Promise.all([
+        runAssessment(assessModel,ctrl.signal,setStreamThink,setStreamContent),
+        runAssessment(benchModel,ctrl.signal,()=>{},()=>{}),
+      ]);
+      const diff=computeDiff(pg,primary,baseline);
+      setPageStore(p=>{const d=p[pgId]||mkPage();return updTab(p,d.activeTabId,{result:primary,model:assessModel,guidanceUsed:useGuidance&&!!THINKING[pgId],bench:{model:benchModel,result:baseline,diff}});});
+    }catch(e){if(e.name!=="AbortError"&&e.message!=="__auth__")setBenchErr(e.message||"Benchmark failed");}
+    finally{setBusy(false);setBenchBusy(false);setBmsg("");benchAbort.current=null;assessAbort.current=null;}
   };
 
   const findQ=(sid,cid)=>pg.sections.find(s=>s.id===sid)?.hints.find(h=>h[0]===cid)?.[1]||cid;
@@ -619,9 +665,20 @@ QUALITY REQUIREMENTS:
                 </div>
                 <button className="upbtn" onClick={()=>fileRef.current?.click()} style={{fontSize:"12px",padding:"6px 13px",borderRadius:8,border:"1px solid #e2e8f0",background:"white",cursor:"pointer",color:"#334155",display:"flex",alignItems:"center",gap:6,fontWeight:500,transition:"background .1s"}}><i className="ti ti-upload" style={{fontSize:13}}/>Upload</button>
                 <button className="abtn" onClick={doAssess} disabled={!imgs.length||busy} style={{fontSize:"12px",padding:"6px 15px",borderRadius:8,border:"none",cursor:imgs.length&&!busy?"pointer":"not-allowed",background:imgs.length&&!busy?"#2563eb":"#e2e8f0",color:imgs.length&&!busy?"white":"#94a3b8",display:"flex",alignItems:"center",gap:6,fontWeight:600,transition:"background .15s"}}>
-                  <i className={`ti ${busy?"ti-loader sp":"ti-scan"}`} style={{fontSize:13}}/>{busy?"Assessing…":"Assess"}
+                  <i className={`ti ${busy&&!benchBusy?"ti-loader sp":"ti-scan"}`} style={{fontSize:13}}/>{busy&&!benchBusy?"Assessing…":"Assess"}
                 </button>
-                {busy&&<button onClick={()=>assessAbort.current?.abort()} style={{fontSize:"12px",padding:"6px 13px",borderRadius:8,border:"1px solid #fca5a5",background:"#fef2f2",cursor:"pointer",color:"#dc2626",display:"flex",alignItems:"center",gap:6,fontWeight:600}}>
+                <div style={{display:"flex",alignItems:"center",borderRadius:8,border:"1px solid #ddd6fe",overflow:"hidden"}}>
+                  <select value={benchModel} onChange={e=>setBenchModel(e.target.value)} disabled={busy} title="Benchmark baseline model"
+                    style={{fontSize:"11px",padding:"5px 6px 5px 8px",border:"none",background:"#faf5ff",color:"#6b21a8",cursor:"pointer",outline:"none",fontFamily:"system-ui,sans-serif",maxWidth:120,fontWeight:500}}>
+                    {ASSESS_MODELS.map(m=><option key={m.id} value={m.id}> {m.label}</option>)}
+                  </select>
+                  <button onClick={doBenchmark} disabled={!imgs.length||busy}
+                    style={{fontSize:"12px",padding:"6px 12px",border:"none",borderLeft:"1px solid #ddd6fe",cursor:imgs.length&&!busy?"pointer":"not-allowed",background:imgs.length&&!busy?"#7c3aed":"#e9d5ff",color:imgs.length&&!busy?"white":"#a78bfa",display:"flex",alignItems:"center",gap:5,fontWeight:600,transition:"background .15s"}}
+                    onMouseEnter={e=>{if(imgs.length&&!busy)e.currentTarget.style.background="#6d28d9";}} onMouseLeave={e=>{if(imgs.length&&!busy)e.currentTarget.style.background="#7c3aed";}}>
+                    <i className={`ti ${benchBusy?"ti-loader sp":"ti-scale"}`} style={{fontSize:13}}/>{benchBusy?"Benchmarking…":"Benchmark"}
+                  </button>
+                </div>
+                {busy&&<button onClick={()=>{assessAbort.current?.abort();benchAbort.current?.abort();}} style={{fontSize:"12px",padding:"6px 13px",borderRadius:8,border:"1px solid #fca5a5",background:"#fef2f2",cursor:"pointer",color:"#dc2626",display:"flex",alignItems:"center",gap:6,fontWeight:600}}>
                   <i className="ti ti-square" style={{fontSize:13}}/>Stop
                 </button>}
               </div>
@@ -697,6 +754,7 @@ QUALITY REQUIREMENTS:
             )}
             {!result&&!err&&!busy&&(<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100%",gap:14,color:"#94a3b8"}}><div style={{width:60,height:60,borderRadius:16,background:"#f1f5f9",display:"flex",alignItems:"center",justifyContent:"center"}}><i className="ti ti-clipboard-list" style={{fontSize:30,color:"#cbd5e1"}}/></div><div style={{textAlign:"center",maxWidth:240}}><div style={{fontSize:"14px",fontWeight:600,color:"#334155",marginBottom:5}}>No assessment yet</div><div style={{fontSize:"12px",lineHeight:1.6,color:"#94a3b8"}}>Upload a document image and click <strong style={{color:"#334155"}}>Assess</strong> to run all <strong style={{color:pg.color}}>{total} checks</strong> from the <strong style={{color:pg.color}}>{pg.title}</strong> hint page</div></div></div>)}
             {err&&(<div style={{padding:"12px 14px",background:"#fef2f2",borderRadius:10,border:"1px solid #fca5a5",display:"flex",gap:10,alignItems:"flex-start"}}><i className="ti ti-alert-circle" style={{fontSize:18,color:"#dc2626",flexShrink:0,marginTop:1}}/><div><div style={{fontSize:"13px",fontWeight:600,color:"#991b1b",marginBottom:2}}>Assessment failed</div><div style={{fontSize:"12px",color:"#b91c1c",lineHeight:1.5}}>{err}</div></div></div>)}
+            {benchErr&&(<div style={{padding:"12px 14px",background:"#fef2f2",borderRadius:10,border:"1px solid #fca5a5",display:"flex",gap:10,alignItems:"flex-start",marginTop:err?10:0}}><i className="ti ti-alert-circle" style={{fontSize:18,color:"#dc2626",flexShrink:0,marginTop:1}}/><div><div style={{fontSize:"13px",fontWeight:600,color:"#991b1b",marginBottom:2}}>Benchmark failed</div><div style={{fontSize:"12px",color:"#b91c1c",lineHeight:1.5}}>{benchErr}</div></div></div>)}
             {result&&(<div>
               <div style={{padding:"13px 15px",borderRadius:11,background:vc.bg,border:`2px solid ${vc.border}`,marginBottom:13,display:"flex",gap:12,alignItems:"flex-start"}}>
                 <i className={`ti ${vc.icon}`} style={{fontSize:24,color:vc.text,flexShrink:0,marginTop:1}}/><div style={{flex:1}}><div style={{fontWeight:700,color:vc.text,fontSize:"14px",marginBottom:5}}>{vc.label}</div><div style={{fontSize:"12px",color:vc.text,lineHeight:1.6,opacity:.9}}>{result.summary}</div>{activeTab.model&&<div style={{marginTop:7,fontSize:"10px",opacity:.65,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}><span style={{display:"flex",alignItems:"center",gap:4}}><i className="ti ti-robot" style={{fontSize:10}}/>{ASSESS_MODELS.find(m=>m.id===activeTab.model)?.label||activeTab.model}</span>{activeTab.guidanceUsed!==null&&<span style={{display:"flex",alignItems:"center",gap:4}}><i className={`ti ${activeTab.guidanceUsed?"ti-brain":"ti-brain-off"}`} style={{fontSize:10}}/>{activeTab.guidanceUsed?"expert guidance":"no guidance"}</span>}</div>}</div>
@@ -706,6 +764,68 @@ QUALITY REQUIREMENTS:
                   <div key={lb} style={{background:bg,borderRadius:10,padding:"9px 5px",textAlign:"center",border:`1px solid ${bd}`}}><div style={{fontSize:"22px",fontWeight:800,color:tx,lineHeight:1}}>{v}</div><div style={{fontSize:"11px",color:tx,marginTop:4,fontWeight:500,opacity:.85}}>{lb}</div></div>
                 ))}
               </div>
+              {activeTab.bench&&(()=>{const b=activeTab.bench;const d=b.diff;const pctColor=d.agreementPct>=0.85?"#16a34a":d.agreementPct>=0.7?"#d97706":"#dc2626";const vcA=VCFG[d.verdictA]||VCFG.CANNOT_DETERMINE;const vcB=VCFG[d.verdictB]||VCFG.CANNOT_DETERMINE;return(
+                <div style={{marginBottom:13,padding:"12px 14px",borderRadius:11,border:"1px solid #ddd6fe",background:"#faf5ff"}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:11,flexWrap:"wrap",gap:8}}>
+                    <div style={{display:"flex",alignItems:"center",gap:7}}>
+                      <i className="ti ti-scale" style={{fontSize:16,color:"#7c3aed"}}/>
+                      <div>
+                        <div style={{fontSize:"12px",fontWeight:700,color:"#581c87"}}>Benchmark Report</div>
+                        <div style={{fontSize:"10px",color:"#7c3aed",opacity:.8,marginTop:1}}>{ASSESS_MODELS.find(m=>m.id===activeTab.model)?.label||activeTab.model} <span style={{color:"#a78bfa"}}>vs</span> {ASSESS_MODELS.find(m=>m.id===b.model)?.label||b.model}</div>
+                      </div>
+                    </div>
+                    <div style={{display:"flex",alignItems:"baseline",gap:4}}>
+                      <span style={{fontSize:"22px",fontWeight:800,color:pctColor,lineHeight:1}}>{Math.round(d.agreementPct*100)}%</span>
+                      <span style={{fontSize:"10px",color:"#7c3aed",fontWeight:600,letterSpacing:".04em",textTransform:"uppercase"}}>agreement</span>
+                    </div>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 28px 1fr",gap:6,alignItems:"center",marginBottom:10}}>
+                    <div style={{padding:"7px 9px",background:"white",borderRadius:8,border:`1px solid ${vcA.border}33`}}>
+                      <div style={{fontSize:"9px",color:"#7c3aed",fontWeight:700,letterSpacing:".05em",textTransform:"uppercase",marginBottom:3}}>Current</div>
+                      <div style={{fontSize:"11px",fontWeight:700,color:vcA.text,lineHeight:1.3,marginBottom:3}}>{vcA.label}</div>
+                      <div style={{fontSize:"10px",color:"#64748b",fontFamily:"monospace"}}>{d.countsA.criticalFails}c · {d.countsA.warnings}w · {d.countsA.passes}p · {d.countsA.unverifiable}u</div>
+                    </div>
+                    <div style={{textAlign:"center"}}><i className={`ti ${d.verdictMatch?"ti-equal":"ti-arrows-diff"}`} style={{fontSize:18,color:d.verdictMatch?"#16a34a":"#d97706"}}/></div>
+                    <div style={{padding:"7px 9px",background:"white",borderRadius:8,border:`1px solid ${vcB.border}33`}}>
+                      <div style={{fontSize:"9px",color:"#7c3aed",fontWeight:700,letterSpacing:".05em",textTransform:"uppercase",marginBottom:3}}>Baseline</div>
+                      <div style={{fontSize:"11px",fontWeight:700,color:vcB.text,lineHeight:1.3,marginBottom:3}}>{vcB.label}</div>
+                      <div style={{fontSize:"10px",color:"#64748b",fontFamily:"monospace"}}>{d.countsB.criticalFails}c · {d.countsB.warnings}w · {d.countsB.passes}p · {d.countsB.unverifiable}u</div>
+                    </div>
+                  </div>
+                  {d.disagreements.length===0
+                    ?<div style={{padding:"8px 10px",background:"#f0fdf4",borderRadius:7,border:"1px solid #bbf7d0",fontSize:"11px",color:"#15803d",display:"flex",alignItems:"center",gap:6}}><i className="ti ti-check" style={{fontSize:13}}/>Both models agreed on all {d.total} checks.</div>
+                    :<details open style={{borderTop:"1px solid #e9d5ff",paddingTop:9,marginTop:4}}>
+                      <summary style={{fontSize:"11px",fontWeight:700,color:"#581c87",cursor:"pointer",marginBottom:7,listStyle:"none",display:"flex",alignItems:"center",gap:5}}>
+                        <i className="ti ti-arrows-diff" style={{fontSize:12}}/>
+                        {d.disagreements.length} disagreement{d.disagreements.length!==1?"s":""}
+                        {(()=>{const c=d.disagreements.filter(x=>x.severity==="critical").length;const m=d.disagreements.filter(x=>x.severity==="medium").length;const min=d.disagreements.filter(x=>x.severity==="minor").length;return<span style={{marginLeft:6,fontSize:"10px",fontWeight:500,color:"#7c3aed"}}>{c>0&&<span style={{color:"#dc2626"}}>{c} critical</span>}{c>0&&(m>0||min>0)&&" · "}{m>0&&<span style={{color:"#d97706"}}>{m} medium</span>}{m>0&&min>0&&" · "}{min>0&&<span style={{color:"#64748b"}}>{min} minor</span>}</span>;})()}
+                      </summary>
+                      <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:340,overflowY:"auto"}}>
+                        {d.disagreements.map(dis=>{const sevC=dis.severity==="critical"?"#dc2626":dis.severity==="medium"?"#d97706":"#64748b";return(
+                          <div key={dis.checkId} style={{padding:"7px 9px",background:"white",borderRadius:7,border:"1px solid #e9d5ff",borderLeft:`3px solid ${sevC}`}}>
+                            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
+                              <span style={{fontSize:"9px",fontFamily:"monospace",color:"#94a3b8"}}>{dis.checkId}</span>
+                              <span style={{fontSize:"9px",color:"#a78bfa"}}>[{dis.sectionId}] {dis.sectionTitle}</span>
+                              <span style={{marginLeft:"auto",fontSize:"9px",padding:"1px 6px",borderRadius:999,fontWeight:700,background:dis.severity==="critical"?"#fef2f2":dis.severity==="medium"?"#fffbeb":"#f1f5f9",color:sevC,border:`1px solid ${sevC}33`,textTransform:"uppercase",letterSpacing:".05em"}}>{dis.severity}</span>
+                            </div>
+                            <div style={{fontSize:"11px",color:"#334155",marginBottom:5,lineHeight:1.4}}>{dis.question}</div>
+                            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                              <div style={{padding:"5px 7px",background:"#fafafa",borderRadius:5,border:`1px solid ${ABd(dis.answerA)}`}}>
+                                <span style={{fontSize:"10px",padding:"1px 6px",borderRadius:999,fontWeight:700,background:AB(dis.answerA),color:AC(dis.answerA),marginRight:5}}>{dis.answerA}</span>
+                                <span style={{fontSize:"10px",color:"#475569",lineHeight:1.4}}>{dis.findingA||<em style={{color:"#cbd5e1"}}>no finding</em>}</span>
+                              </div>
+                              <div style={{padding:"5px 7px",background:"#fafafa",borderRadius:5,border:`1px solid ${ABd(dis.answerB)}`}}>
+                                <span style={{fontSize:"10px",padding:"1px 6px",borderRadius:999,fontWeight:700,background:AB(dis.answerB),color:AC(dis.answerB),marginRight:5}}>{dis.answerB}</span>
+                                <span style={{fontSize:"10px",color:"#475569",lineHeight:1.4}}>{dis.findingB||<em style={{color:"#cbd5e1"}}>no finding</em>}</span>
+                              </div>
+                            </div>
+                          </div>
+                        );})}
+                      </div>
+                    </details>
+                  }
+                </div>
+              );})()}
               {result.sections?.map(sec=>{
                 const fails=sec.checks?.filter(c=>c.answer==="NO").length||0;const warns=sec.checks?.filter(c=>c.answer==="WARN").length||0;
                 return(<div key={sec.id} style={{marginBottom:9,border:"1px solid #e2e8f0",borderRadius:10,overflow:"hidden"}}>

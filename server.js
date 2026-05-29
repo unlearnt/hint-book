@@ -1,14 +1,18 @@
+import dotenv from "dotenv";
 import express from "express";
 import { createProxyMiddleware } from "http-proxy-middleware";
 import crypto from "crypto";
 import path from "path";
 import { fileURLToPath } from "url";
 
+// Prefer project .env values over any stale shell-level env values.
+dotenv.config({ override: true });
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const PASSWORD = process.env.APP_PASSWORD;
-const DEEPINFRA_API_KEY = process.env.DEEPINFRA_API_KEY;
-const COSMOS_API_KEY = process.env.COSMOS_API_KEY;
+const PASSWORD = (process.env.APP_PASSWORD || "").trim();
+const DEEPINFRA_API_KEY = (process.env.DEEPINFRA_API_KEY || "").trim();
+const COSMOS_API_KEY = (process.env.COSMOS_API_KEY || "").trim();
 const PORT = process.env.PORT || 3000;
 
 if (!PASSWORD) { console.error("APP_PASSWORD is not set"); process.exit(1); }
