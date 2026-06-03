@@ -198,7 +198,7 @@ export default function HintBookApp(){
         const d=line.slice(6).trim();if(d==="[DONE]")continue;
         try{
           const delta=JSON.parse(d).choices?.[0]?.delta;
-          if(delta?.reasoning_content){fullThink+=delta.reasoning_content;onThink(fullThink);}
+          if(delta?.reasoning_content||delta?.reasoning){fullThink+=(delta.reasoning_content||delta.reasoning);onThink(fullThink);}
           if(delta?.content){
             fullContent+=delta.content;
             // Qwen3 thinking models embed reasoning in <think>...</think> tags in content
