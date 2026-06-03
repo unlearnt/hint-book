@@ -4,15 +4,16 @@ import THINKING from "./hints/thinking/index.js";
 
 
 const ASSESS_MODELS=[
-  {id:"Qwen/Qwen3-VL-30B-A3B-Instruct",label:"Qwen3-VL-30B-A3B-Instruct"},
-  {id:"Qwen/Qwen3-VL-235B-A22B-Instruct",label:"Qwen3-VL-235B-A22B-Instruct"},
-  {id:"Qwen/Qwen3.6-35B-A3B",label:"Qwen3.6-35B-A3B ✦"},
-  {id:"google/gemma-4-31B-it",label:"Gemma 4 31B"},
-  {id:"moonshotai/Kimi-K2.6",label:"Kimi K2.6 ✦"},
-  {id:"XiaomiMiMo/MiMo-V2.5",label:"MiMo V2.5 ✦"},
-  {id:"anthropic/claude-opus-4-7",label:"Claude Opus 4.7"},
-  {id:"anthropic/claude-sonnet-4-6",label:"Claude Sonnet 4.6"},
-  {id:"anthropic/claude-haiku-4-5",label:"Claude Haiku 4.5"},
+  {id:"Qwen/Qwen3-VL-30B-A3B-Instruct",label:"Qwen3-VL-30B-A3B-Instruct",provider:"deepinfra"},
+  {id:"Qwen/Qwen3-VL-235B-A22B-Instruct",label:"Qwen3-VL-235B-A22B-Instruct",provider:"deepinfra"},
+  {id:"Qwen/Qwen3.6-35B-A3B",label:"Qwen3.6-35B-A3B ✦",provider:"deepinfra"},
+  {id:"google/gemma-4-31B-it",label:"Gemma 4 31B",provider:"deepinfra"},
+  {id:"moonshotai/Kimi-K2.6",label:"Kimi K2.6 ✦",provider:"deepinfra"},
+  {id:"XiaomiMiMo/MiMo-V2.5",label:"MiMo V2.5 ✦",provider:"deepinfra"},
+  {id:"accounts/fireworks/models/qwen3-vl-30b-a3b-thinking",label:"Qwen3-VL-30B-Thinking ✦ [FW]",provider:"fireworks"},
+  {id:"accounts/fireworks/models/qwen3-vl-235b-a22b-thinking",label:"Qwen3-VL-235B-Thinking ✦ [FW]",provider:"fireworks"},
+  {id:"accounts/fireworks/models/internvl3-78b",label:"InternVL3-78B [FW]",provider:"fireworks"},
+  {id:"accounts/fireworks/models/internvl3-38b",label:"InternVL3-38B [FW]",provider:"fireworks"},
 ];
 const GEN_MODELS=[
   {id:"deepseek-ai/DeepSeek-V4-Pro",label:"DeepSeek V4 Pro"},
@@ -292,8 +293,10 @@ ${qs}
 
 Return JSON in exactly this shape (do not include verdict/counts — those are computed downstream):
 {"summary":"2-3 sentence assessment naming specific anomalies, or confirming the document looks consistent","sections":[{"id":"","title":"","checks":[{"id":"","answer":"YES|NO|WARN|UNVERIFIABLE|CONTEXT","finding":"1 sentence","bbox":[0,0,0,0],"imgIdx":0}]}]}`;
+    const provider=ASSESS_MODELS.find(m=>m.id===model)?.provider||"deepinfra";
+    const endpoint=provider==="fireworks"?"/api/fireworks/chat/completions":"/api/llm/chat/completions";
     const raw=await streamSSE(
-      "/api/llm/chat/completions",
+      endpoint,
       {model,temperature:assessTemp,max_tokens:assessMaxTok,messages:[
         {role:"system",content:systemPrompt},
         {role:"user",content:[
