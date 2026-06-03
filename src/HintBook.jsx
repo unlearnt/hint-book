@@ -10,10 +10,10 @@ const ASSESS_MODELS=[
   {id:"google/gemma-4-31B-it",label:"Gemma 4 31B",provider:"deepinfra"},
   {id:"moonshotai/Kimi-K2.6",label:"Kimi K2.6 ✦",provider:"deepinfra"},
   {id:"XiaomiMiMo/MiMo-V2.5",label:"MiMo V2.5 ✦",provider:"deepinfra"},
-  {id:"qwen/qwen3-vl-8b-thinking",label:"Qwen3-VL-8B-Thinking ✦ [OR]",provider:"openrouter"},
-  {id:"qwen/qwen3-vl-30b-a3b-thinking",label:"Qwen3-VL-30B-Thinking ✦ [OR]",provider:"openrouter"},
-  {id:"qwen/qwen3-vl-235b-a22b-thinking",label:"Qwen3-VL-235B-Thinking ✦ [OR]",provider:"openrouter"},
-  {id:"meta-llama/llama-4-scout",label:"Llama 4 Scout [OR]",provider:"openrouter"},
+  {id:"qwen/qwen3-vl-8b-thinking",label:"Qwen3-VL-8B-Thinking ✦ [OR]",provider:"openrouter",thinking:true},
+  {id:"qwen/qwen3-vl-30b-a3b-thinking",label:"Qwen3-VL-30B-Thinking ✦ [OR]",provider:"openrouter",thinking:true},
+  {id:"qwen/qwen3-vl-235b-a22b-thinking",label:"Qwen3-VL-235B-Thinking ✦ [OR]",provider:"openrouter",thinking:true},
+  {id:"meta-llama/llama-4-scout",label:"Llama 4 Scout [OR]",provider:"openrouter",thinking:false},
 ];
 const GEN_MODELS=[
   {id:"deepseek-ai/DeepSeek-V4-Pro",label:"DeepSeek V4 Pro"},
@@ -144,6 +144,7 @@ export default function HintBookApp(){
   const[genTemp,setGenTemp]=useState(()=>lsGet("hb_settings",{}).genTemp??0.4);
   const[genMaxTok,setGenMaxTok]=useState(()=>lsGet("hb_settings",{}).genMaxTok||8192);
   const[useGuidance,setUseGuidance]=useState(()=>lsGet("hb_settings",{}).useGuidance??true);
+  const[thinkBudget,setThinkBudget]=useState(()=>lsGet("hb_settings",{}).thinkBudget||4000);
   const[benchModel,setBenchModel]=useState(()=>lsGet("hb_settings",{}).benchModel||"anthropic/claude-sonnet-4-6");
   const[benchBusy,setBenchBusy]=useState(false);
   const[benchErr,setBenchErr]=useState(null);
@@ -235,7 +236,7 @@ export default function HintBookApp(){
     lsSet("hb_pageStore",dehydrate(pageStore),s=>evict(s));
   },[pageStore]);
   useEffect(()=>{lsSet("hb_dynPages",dynPages);},[dynPages]);
-  useEffect(()=>{lsSet("hb_settings",{assessModel,genModel,assessTemp,assessMaxTok,genTemp,genMaxTok,centerW,useGuidance,benchModel});},[assessModel,genModel,assessTemp,assessMaxTok,genTemp,genMaxTok,centerW,useGuidance,benchModel]);
+  useEffect(()=>{lsSet("hb_settings",{assessModel,genModel,assessTemp,assessMaxTok,genTemp,genMaxTok,centerW,useGuidance,thinkBudget,benchModel});},[assessModel,genModel,assessTemp,assessMaxTok,genTemp,genMaxTok,centerW,useGuidance,thinkBudget,benchModel]);
 
   useEffect(()=>{
     const onMove=e=>{if(!dragging.current)return;const d=e.clientX-dragX.current;setCenterW(Math.max(180,Math.min(520,dragW.current+d)));};
@@ -293,11 +294,13 @@ ${qs}
 
 Return JSON in exactly this shape (do not include verdict/counts — those are computed downstream):
 {"summary":"2-3 sentence assessment naming specific anomalies, or confirming the document looks consistent","sections":[{"id":"","title":"","checks":[{"id":"","answer":"YES|NO|WARN|UNVERIFIABLE|CONTEXT","finding":"1 sentence","bbox":[0,0,0,0],"imgIdx":0}]}]}`;
-    const provider=ASSESS_MODELS.find(m=>m.id===model)?.provider||"deepinfra";
+    const modelCfg=ASSESS_MODELS.find(m=>m.id===model)||{};
+    const provider=modelCfg.provider||"deepinfra";
     const endpoint=provider==="openrouter"?"/api/openrouter/chat/completions":"/api/llm/chat/completions";
+    const extraBody=provider==="openrouter"&&modelCfg.thinking?{reasoning:{max_tokens:thinkBudget}}:{};
     const raw=await streamSSE(
       endpoint,
-      {model,temperature:assessTemp,max_tokens:assessMaxTok,messages:[
+      {model,temperature:assessTemp,max_tokens:assessMaxTok,...extraBody,messages:[
         {role:"system",content:systemPrompt},
         {role:"user",content:[
           {type:"text",text:userText},
@@ -739,6 +742,13 @@ QUALITY REQUIREMENTS:
                     onChange={e=>{const v=parseInt(e.target.value);if(!isNaN(v))setAssessMaxTok(Math.min(16384,Math.max(1024,v)));}}
                     style={{width:44,fontSize:"11px",border:"none",outline:"none",color:"#334155",fontFamily:"system-ui,sans-serif",textAlign:"center",padding:0,background:"transparent"}}/>
                 </div>
+                {ASSESS_MODELS.find(m=>m.id===assessModel)?.thinking&&(
+                <div style={{display:"flex",alignItems:"center",gap:4,padding:"4px 8px",borderRadius:7,border:"1px solid #ddd6fe",background:"#faf5ff",height:28,boxSizing:"border-box"}} title="Max tokens the model can spend thinking before answering">
+                  <span style={{fontSize:"10px",color:"#7c3aed",userSelect:"none"}}>Think</span>
+                  <input type="number" min="512" max={Math.max(512,assessMaxTok-1024)} step="512" value={thinkBudget} disabled={busy}
+                    onChange={e=>{const v=parseInt(e.target.value);if(!isNaN(v))setThinkBudget(Math.min(assessMaxTok-1024,Math.max(512,v)));}}
+                    style={{width:40,fontSize:"11px",border:"none",outline:"none",color:"#7c3aed",fontFamily:"system-ui,sans-serif",textAlign:"center",padding:0,background:"transparent"}}/>
+                </div>)}
                 <button className="upbtn" onClick={()=>fileRef.current?.click()} style={{fontSize:"12px",padding:"6px 13px",borderRadius:8,border:"1px solid #e2e8f0",background:"white",cursor:"pointer",color:"#334155",display:"flex",alignItems:"center",gap:6,fontWeight:500,transition:"background .1s"}}><i className="ti ti-upload" style={{fontSize:13}}/>Upload</button>
                 <button className="abtn" onClick={doAssess} disabled={!imgs.length||busy} style={{fontSize:"12px",padding:"6px 15px",borderRadius:8,border:"none",cursor:imgs.length&&!busy?"pointer":"not-allowed",background:imgs.length&&!busy?"#2563eb":"#e2e8f0",color:imgs.length&&!busy?"white":"#94a3b8",display:"flex",alignItems:"center",gap:6,fontWeight:600,transition:"background .15s"}}>
                   <i className={`ti ${busy&&!benchBusy?"ti-loader sp":"ti-scan"}`} style={{fontSize:13}}/>{busy&&!benchBusy?"Assessing…":"Assess"}
