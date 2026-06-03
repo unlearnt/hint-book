@@ -13,12 +13,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PASSWORD = (process.env.APP_PASSWORD || "").trim();
 const DEEPINFRA_API_KEY = (process.env.DEEPINFRA_API_KEY || "").trim();
 const COSMOS_API_KEY = (process.env.COSMOS_API_KEY || "").trim();
-const FIREWORKS_API_KEY = (process.env.FIREWORKS_API_KEY || "").trim();
+const OPENROUTER_API_KEY = (process.env.OPENROUTER_API_KEY || "").trim();
 const PORT = process.env.PORT || 3000;
 
 if (!PASSWORD) { console.error("APP_PASSWORD is not set"); process.exit(1); }
 if (!DEEPINFRA_API_KEY) { console.error("DEEPINFRA_API_KEY is not set"); process.exit(1); }
-if (!FIREWORKS_API_KEY) { console.warn("FIREWORKS_API_KEY is not set — Fireworks models will be unavailable"); }
+if (!OPENROUTER_API_KEY) { console.warn("OPENROUTER_API_KEY is not set — OpenRouter models will be unavailable"); }
 
 const sessions = new Set();
 
@@ -73,16 +73,18 @@ app.use("/api/llm", requireAuth, createProxyMiddleware({
   },
 }));
 
-app.use("/api/fireworks", requireAuth, (req, res, next) => {
-  if (!FIREWORKS_API_KEY) return res.status(503).json({ error: "FIREWORKS_API_KEY not configured" });
+app.use("/api/openrouter", requireAuth, (req, res, next) => {
+  if (!OPENROUTER_API_KEY) return res.status(503).json({ error: "OPENROUTER_API_KEY not configured" });
   next();
 }, createProxyMiddleware({
-  target: "https://api.fireworks.ai",
+  target: "https://openrouter.ai",
   changeOrigin: true,
-  pathRewrite: (path) => `/inference/v1${path}`,
+  pathRewrite: (path) => `/api/v1${path}`,
   on: {
     proxyReq: (proxyReq) => {
-      proxyReq.setHeader("Authorization", `Bearer ${FIREWORKS_API_KEY}`);
+      proxyReq.setHeader("Authorization", `Bearer ${OPENROUTER_API_KEY}`);
+      proxyReq.setHeader("HTTP-Referer", "https://hintbook.app");
+      proxyReq.setHeader("X-Title", "HintBook");
     },
   },
 }));

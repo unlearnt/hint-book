@@ -10,10 +10,10 @@ const ASSESS_MODELS=[
   {id:"google/gemma-4-31B-it",label:"Gemma 4 31B",provider:"deepinfra"},
   {id:"moonshotai/Kimi-K2.6",label:"Kimi K2.6 ✦",provider:"deepinfra"},
   {id:"XiaomiMiMo/MiMo-V2.5",label:"MiMo V2.5 ✦",provider:"deepinfra"},
-  {id:"accounts/fireworks/models/qwen3-vl-30b-a3b-thinking",label:"Qwen3-VL-30B-Thinking ✦ [FW]",provider:"fireworks"},
-  {id:"accounts/fireworks/models/qwen3-vl-235b-a22b-thinking",label:"Qwen3-VL-235B-Thinking ✦ [FW]",provider:"fireworks"},
-  {id:"accounts/fireworks/models/internvl3-78b",label:"InternVL3-78B [FW]",provider:"fireworks"},
-  {id:"accounts/fireworks/models/internvl3-38b",label:"InternVL3-38B [FW]",provider:"fireworks"},
+  {id:"qwen/qwen3-vl-8b-thinking",label:"Qwen3-VL-8B-Thinking ✦ [OR]",provider:"openrouter"},
+  {id:"qwen/qwen3-vl-30b-a3b-thinking",label:"Qwen3-VL-30B-Thinking ✦ [OR]",provider:"openrouter"},
+  {id:"qwen/qwen3-vl-235b-a22b-thinking",label:"Qwen3-VL-235B-Thinking ✦ [OR]",provider:"openrouter"},
+  {id:"meta-llama/llama-4-scout",label:"Llama 4 Scout [OR]",provider:"openrouter"},
 ];
 const GEN_MODELS=[
   {id:"deepseek-ai/DeepSeek-V4-Pro",label:"DeepSeek V4 Pro"},
@@ -294,7 +294,7 @@ ${qs}
 Return JSON in exactly this shape (do not include verdict/counts — those are computed downstream):
 {"summary":"2-3 sentence assessment naming specific anomalies, or confirming the document looks consistent","sections":[{"id":"","title":"","checks":[{"id":"","answer":"YES|NO|WARN|UNVERIFIABLE|CONTEXT","finding":"1 sentence","bbox":[0,0,0,0],"imgIdx":0}]}]}`;
     const provider=ASSESS_MODELS.find(m=>m.id===model)?.provider||"deepinfra";
-    const endpoint=provider==="fireworks"?"/api/fireworks/chat/completions":"/api/llm/chat/completions";
+    const endpoint=provider==="openrouter"?"/api/openrouter/chat/completions":"/api/llm/chat/completions";
     const raw=await streamSSE(
       endpoint,
       {model,temperature:assessTemp,max_tokens:assessMaxTok,messages:[
