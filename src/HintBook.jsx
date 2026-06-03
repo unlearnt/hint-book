@@ -6,6 +6,7 @@ import THINKING from "./hints/thinking/index.js";
 const ASSESS_MODELS=[
   {id:"Qwen/Qwen3-VL-30B-A3B-Instruct",label:"Qwen3-VL-30B-A3B-Instruct"},
   {id:"Qwen/Qwen3-VL-235B-A22B-Instruct",label:"Qwen3-VL-235B-A22B-Instruct"},
+  {id:"Qwen/Qwen3.6-35B-A3B",label:"Qwen3.6-35B-A3B ✦"},
   {id:"google/gemma-4-31B-it",label:"Gemma 4 31B"},
   {id:"moonshotai/Kimi-K2.6",label:"Kimi K2.6 ✦"},
   {id:"XiaomiMiMo/MiMo-V2.5",label:"MiMo V2.5 ✦"},
