@@ -10,6 +10,7 @@ const ASSESS_MODELS=[
   {id:"google/gemma-4-31B-it",label:"Gemma 4 31B",provider:"deepinfra"},
   {id:"moonshotai/Kimi-K2.6",label:"Kimi K2.6 ✦",provider:"deepinfra"},
   {id:"XiaomiMiMo/MiMo-V2.5",label:"MiMo V2.5 ✦",provider:"deepinfra"},
+  {id:"qwen/qwen3.7-plus",label:"Qwen3.7-Plus ✦ [OR]",provider:"openrouter",thinking:true},
   {id:"qwen/qwen3-vl-8b-thinking",label:"Qwen3-VL-8B-Thinking ✦ [OR]",provider:"openrouter",thinking:true},
   {id:"qwen/qwen3-vl-30b-a3b-thinking",label:"Qwen3-VL-30B-Thinking ✦ [OR]",provider:"openrouter",thinking:true},
   {id:"qwen/qwen3-vl-235b-a22b-thinking",label:"Qwen3-VL-235B-Thinking ✦ [OR]",provider:"openrouter",thinking:true},
