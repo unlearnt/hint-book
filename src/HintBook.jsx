@@ -15,6 +15,9 @@ const ASSESS_MODELS=[
   {id:"qwen/qwen3-vl-30b-a3b-thinking",label:"Qwen3-VL-30B-Thinking ✦ [OR]",provider:"openrouter",thinking:true},
   {id:"qwen/qwen3-vl-235b-a22b-thinking",label:"Qwen3-VL-235B-Thinking ✦ [OR]",provider:"openrouter",thinking:true},
   {id:"meta-llama/llama-4-scout",label:"Llama 4 Scout [OR]",provider:"openrouter",thinking:false},
+  {id:"anthropic/claude-opus-4-7",label:"Claude Opus 4.7",provider:"deepinfra"},
+  {id:"anthropic/claude-sonnet-4-6",label:"Claude Sonnet 4.6",provider:"deepinfra"},
+  {id:"anthropic/claude-haiku-4-5",label:"Claude Haiku 4.5",provider:"deepinfra"},
 ];
 const GEN_MODELS=[
   {id:"deepseek-ai/DeepSeek-V4-Pro",label:"DeepSeek V4 Pro"},
