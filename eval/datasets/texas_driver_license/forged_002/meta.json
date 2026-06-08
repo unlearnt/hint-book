@@ -1,0 +1,5 @@
+{
+  "category": "forged",
+  "tampered": ["E.2", "E.3"],
+  "notes": "Fake TX DL (LN: DOE, FN: JOHN LEE, DL: 35933696, DOB 10/16/1986, ISS 10/16/2016, EXP 12/15/2020). Front and back of the same card. Design appears Gen 2009 era (darker color scheme, simpler layout, gold REAL ID star). DL number 35933696 is 8 numeric digits (passes D.1 format). Critical structural violations that DO map to hint IDs: (1) E.2: EXP date 12/15/2020 does NOT fall on cardholder birthday (DOB 10/16) — Texas DLs always expire on the holder's birthday, this is a hard rule; (2) E.3: validity span ISS 10/16/2016 → EXP 12/15/2020 = ~4 years 2 months, which is neither the 6-year nor 8-year Texas standard term; this is the '4-year span suspect' case the hint explicitly flags. Out-of-band tells not covered by checks: '123 ANYWHERE STREET, ANYTOWN TX 75039' uses placeholder ANYTOWN (though TX/75039 is a real Dallas-area ZIP, so the address state-ZIP combo is internally consistent unlike forged_001). Photo edges and ghost portrait present and match. Source: Archive 2 / Texas_front_2.png + Texas_back_2.png."
+}

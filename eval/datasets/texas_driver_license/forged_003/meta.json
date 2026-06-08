@@ -1,0 +1,5 @@
+{
+  "category": "forged",
+  "tampered": ["E.3"],
+  "notes": "Fake TX DL (LN: DOE, FN: JOHN LEE, DL: 12345678, DOB 10/16/1986, ISS 06/13/2017, EXP 10/16/2027). Front and back of the same card; design matches Gen 2016 era (gold REAL ID star top right, traditional Texas layout with state silhouette background). DL '12345678' is sequential placeholder — passes D.1 (8 numeric digits) but is obvious test data. EXP date last digit is hard to read in this scan (could be 2017 or 2027); assuming 2027 based on matching DD with forged_004 (USA_Texas_Driver_License.jpg) which shows the same card clearly with EXP 10/16/2027. Structural violation that maps to a hint ID: (1) E.3: validity span ISS 06/13/2017 → EXP 10/16/2027 = ~10 years 4 months, exceeds the Texas 8-year adult standard — the hint explicitly flags '10-year span' as suspect. E.2 passes (EXP 10/16 matches DOB 10/16 birthday). Out-of-band tells not in tampered: '2120 OLD MAIN STREET, ANYTOWN TX 12345' uses placeholder ANYTOWN and the universal-fake ZIP 12345. Photo, ghost portrait, REAL ID star all visually consistent with era. Source: Archive 2 / Texas_front_3.png + Texas_back_3.png."
+}

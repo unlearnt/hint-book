@@ -1,0 +1,5 @@
+{
+  "category": "forged",
+  "tampered": ["E.3", "M.9"],
+  "notes": "AI-generated fake AZ Driver License (LN: NAKAMURA, FN: JIA, DL: D46332133, address 2428 LA ENTRADA DRIVE, BULLHEAD CITY AZ 86442, ISS 02/08/2021, EXP 02/08/2026, DOB 12/03/1997, HGT 5'-00\", WGT 100 lb, EYES BRO, SEX F, Class D). Front only. AI synthesis per filename. Card appears Travel ID (gold star top right, Gen 2016-era marker). Same template family as forged_001 and forged_003. Critical structural violations: (1) E.3: under-65 Travel ID should have ~8-year validity; this card has 5-year span (ISS 02/08/2021 → EXP 02/08/2026), failing the rule. (2) M.9: validity doesn't agree with any valid Arizona card type — for DOB 1997 the standard 65th-birthday expiry would be 12/03/2062, and Travel ID under-65 should be ~8 years. Other tells not in tampered: (a) DD = '000000000000001551' — identical placeholder DD to forged_001 and forged_003 across three different identities. (b) EXP date is on ISS anniversary, not DOB anniversary (12/03 ≠ 02/08). (c) Bullhead City AZ 86442 is a real Arizona ZIP — address state-ZIP consistent. Source: Archive 2 / arizona_generated.photos_v3_0512995.png."
+}

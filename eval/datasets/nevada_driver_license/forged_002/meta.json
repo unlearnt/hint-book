@@ -1,0 +1,5 @@
+{
+  "category": "forged",
+  "tampered": ["B.1", "E.5"],
+  "notes": "AI-generated fake NV card (LN: DIXON, FN: SHANICE, ID: 2739495601, address 7075 CALIFORNIA AVENUE, BAKER NV 89311, ISS 09/21/2020, EXP 09/30/1993, HGT 5'-07\", WGT 122, EYES BRO, HAIR BRO, SEX F). Front only — no back image available. AI synthesis per filename. Critical structural violations that map cleanly to hint IDs: (1) B.1: card header reads 'NEVADA IDENTIFICATION CARD' not 'DRIVER LICENSE' — document-type mismatch with the DL hint page. (2) E.5: EXP date 09/30/1993 is BEFORE ISS date 09/21/2020 — fundamental impossibility (~27 years inverted). Other tells not in tampered: DD field is all zeros (0000000000000000); ID number 2739495601 is 10 digits and passes D.1. Baker NV 89311 is a valid Nevada ZIP (Baker is a small real town near the Utah border) so address state-ZIP is internally consistent. Card includes a HAIR field (Nevada IDs historically include hair color); this field is not specifically checked by the DL hint page. DOB partially obscured in the scan. Source: Archive 2 / nevada_generated.photos_v3_0626822.png."
+}

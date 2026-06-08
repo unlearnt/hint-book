@@ -1,0 +1,5 @@
+{
+  "category": "forged",
+  "tampered": ["B.1", "E.5"],
+  "notes": "AI-generated fake NV card (LN: CASTRO, FN: DIANA, ID: 5238670428, address 8614 HILLSIDE DRIVE, MESQUITE NV 89027, ISS 05/22/2021, EXP 12/04/2004, HGT 5'-02\", WGT 122, EYES BRO, HAIR BRO, SEX F). Front only — no back image available. AI synthesis per filename. Critical structural violations that map cleanly to hint IDs: (1) B.1: card header reads 'NEVADA IDENTIFICATION CARD' not 'DRIVER LICENSE' — document-type mismatch with the DL hint page. (2) E.5: EXP date 12/04/2004 is BEFORE ISS date 05/22/2021 — fundamental impossibility (~16 years inverted). Other tells not in tampered: DD field all zeros (0000000000000000); ID 5238670428 passes D.1 (10 numeric digits). Mesquite NV 89027 is a valid real Nevada ZIP (Mesquite is a real town near the AZ border) so address state-ZIP is internally consistent. Card includes HAIR field, not specifically checked by the DL hint page. DOB partially obscured in scan. Same template as forged_001 and forged_002 — three variations of the same AI-generated synthetic ID card. Source: Archive 2 / nevada_generated.photos_v3_0665679.png."
+}

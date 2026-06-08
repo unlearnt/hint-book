@@ -1,0 +1,5 @@
+{
+  "category": "forged",
+  "tampered": [],
+  "notes": "Fake TX DL (LN: DOE, FN: JOHN LEE, DL: 12345678, DOB 10/16/1986, ISS 12/15/2018, EXP 10/16/2024). Front and back of the same card. Design matches Gen 2009/2016 era (gold REAL ID star top right, traditional layout, ghost mini-portrait, 3D DOB overprint across photo). Forgery indicators do not map cleanly to any single hint ID, hence tampered=[]: (1) DL '12345678' is a sequential placeholder — passes format check D.1 (8 numeric digits) but is obvious test data; (2) address says '123 ANYWHERE STREET, ANYTOWN, VA 75287-0000' — VA is Virginia but ZIP 75287 is in Dallas, Texas (VA ZIPs are 20xxx-24xxx); the hint page has no explicit 'address state matches ZIP' or 'address state = TX' check, so this critical tell isn't structurally captured; (3) 'ANYWHERE STREET / ANYTOWN' is placeholder text. Validity span ISS 12/15/2018 → EXP 10/16/2024 = ~5.83 years (6-yr term aligned to birthday), which is plausible for Gen 2009 era so E.3 = NO is not necessarily fraudulent. Source: Archive 2 / Texas_front_1.png + Texas_back_1.png."
+}
