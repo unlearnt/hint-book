@@ -1,29 +1,12 @@
 import { useState, useRef, useEffect } from "react";
 import PAGES from "./hints/index.js";
 import THINKING from "./hints/thinking/index.js";
+import { ASSESS_MODELS, GEN_MODELS, getModelCfg } from "./assessment/models.js";
+import { runAssessment, retryCheck as retryCheckFn } from "./assessment/pipeline.js";
+import { tallySections, deriveVerdict } from "./assessment/parse.js";
+import { computeDiff } from "./assessment/diff.js";
 
 
-const ASSESS_MODELS=[
-  {id:"Qwen/Qwen3-VL-30B-A3B-Instruct",label:"Qwen3-VL-30B-A3B-Instruct",provider:"deepinfra"},
-  {id:"Qwen/Qwen3-VL-235B-A22B-Instruct",label:"Qwen3-VL-235B-A22B-Instruct",provider:"deepinfra"},
-  {id:"Qwen/Qwen3.6-35B-A3B",label:"Qwen3.6-35B-A3B ✦",provider:"deepinfra"},
-  {id:"google/gemma-4-31B-it",label:"Gemma 4 31B",provider:"deepinfra"},
-  {id:"moonshotai/Kimi-K2.6",label:"Kimi K2.6 ✦",provider:"deepinfra"},
-  {id:"XiaomiMiMo/MiMo-V2.5",label:"MiMo V2.5 ✦",provider:"deepinfra"},
-  {id:"qwen/qwen3.7-plus",label:"Qwen3.7-Plus ✦ [OR]",provider:"openrouter",thinking:true},
-  {id:"qwen/qwen3-vl-8b-thinking",label:"Qwen3-VL-8B-Thinking ✦ [OR]",provider:"openrouter",thinking:true},
-  {id:"qwen/qwen3-vl-30b-a3b-thinking",label:"Qwen3-VL-30B-Thinking ✦ [OR]",provider:"openrouter",thinking:true},
-  {id:"qwen/qwen3-vl-235b-a22b-thinking",label:"Qwen3-VL-235B-Thinking ✦ [OR]",provider:"openrouter",thinking:true},
-  {id:"meta-llama/llama-4-scout",label:"Llama 4 Scout [OR]",provider:"openrouter",thinking:false},
-  {id:"anthropic/claude-opus-4-7",label:"Claude Opus 4.7",provider:"deepinfra"},
-  {id:"anthropic/claude-sonnet-4-6",label:"Claude Sonnet 4.6",provider:"deepinfra"},
-  {id:"anthropic/claude-haiku-4-5",label:"Claude Haiku 4.5",provider:"deepinfra"},
-];
-const GEN_MODELS=[
-  {id:"deepseek-ai/DeepSeek-V4-Pro",label:"DeepSeek V4 Pro"},
-  {id:"deepseek-ai/DeepSeek-R1",label:"DeepSeek R1"},
-  {id:"Qwen/Qwen3-235B-A22B",label:"Qwen3-235B-A22B"},
-];
 
 const AC=a=>({YES:"#16a34a",NO:"#dc2626",WARN:"#d97706",CONTEXT:"#2563eb",UNVERIFIABLE:"#6b7280"})[a]||"#6b7280";
 const AB=a=>({YES:"#f0fdf4",NO:"#fef2f2",WARN:"#fffbeb",CONTEXT:"#eff6ff",UNVERIFIABLE:"#f9fafb"})[a]||"#f9fafb";
@@ -34,60 +17,6 @@ const VCFG={
   SUSPICIOUS:{bg:"#fffbeb",border:"#d97706",text:"#92400e",label:"Suspicious — further investigation required",icon:"ti-alert-triangle"},
   APPEARS_LEGITIMATE:{bg:"#f0fdf4",border:"#16a34a",text:"#14532d",label:"Appears legitimate",icon:"ti-shield-check"},
   CANNOT_DETERMINE:{bg:"#f8fafc",border:"#64748b",text:"#1e293b",label:"Cannot determine — insufficient visual data",icon:"ti-help"},
-};
-const deriveVerdict=(c,w,p,u,total)=>{
-  if(c>=2)return"HIGHLY_SUSPICIOUS";
-  if(c===1||w>=3)return"SUSPICIOUS";
-  if(p+w<total*0.4)return"CANNOT_DETERMINE";
-  return"APPEARS_LEGITIMATE";
-};
-const SEV_RANK={critical:0,medium:1,minor:2};
-const computeDiff=(pg,rA,rB)=>{
-  let agreements=0;const disagreements=[];let total=0;
-  for(const sec of pg.sections){
-    const rsA=rA.sections?.find(r=>r.id===sec.id);
-    const rsB=rB.sections?.find(r=>r.id===sec.id);
-    for(const h of sec.hints){
-      total++;
-      const chkA=rsA?.checks?.find(c=>c.id===h[0]);
-      const chkB=rsB?.checks?.find(c=>c.id===h[0]);
-      const ansA=chkA?.answer||"MISSING";
-      const ansB=chkB?.answer||"MISSING";
-      if(ansA===ansB){agreements++;continue;}
-      const exp=h[3];
-      const isCritA=(exp==="YES"&&ansA==="NO")||(exp==="NO"&&ansA==="YES");
-      const isCritB=(exp==="YES"&&ansB==="NO")||(exp==="NO"&&ansB==="YES");
-      let severity="minor";
-      if(isCritA!==isCritB)severity="critical";
-      else if(ansA==="WARN"||ansB==="WARN")severity="medium";
-      disagreements.push({sectionId:sec.id,sectionTitle:sec.title,checkId:h[0],question:h[1],expect:exp,answerA:ansA,findingA:chkA?.finding||"",answerB:ansB,findingB:chkB?.finding||"",severity});
-    }
-  }
-  disagreements.sort((a,b)=>SEV_RANK[a.severity]-SEV_RANK[b.severity]);
-  return{total,agreements,agreementPct:total>0?agreements/total:0,verdictMatch:rA.verdict===rB.verdict,verdictA:rA.verdict,verdictB:rB.verdict,countsA:{criticalFails:rA.criticalFails,warnings:rA.warnings,passes:rA.passes,unverifiable:rA.unverifiable},countsB:{criticalFails:rB.criticalFails,warnings:rB.warnings,passes:rB.passes,unverifiable:rB.unverifiable},disagreements};
-};
-const tallySections=(pg,sections)=>{
-  let criticalFails=0,warnings=0,passes=0,unverifiable=0;const flagged=[];
-  for(const sec of pg.sections){
-    const rs=sections?.find(r=>r.id===sec.id);
-    for(const h of sec.hints){
-      const chk=rs?.checks?.find(c=>c.id===h[0]);
-      if(!chk){unverifiable++;continue;}
-      const exp=h[3],ans=chk.answer;
-      if(exp==="CONTEXT"){
-        if(ans==="UNVERIFIABLE")unverifiable++;
-        else if(ans==="WARN"){warnings++;if(chk.finding)flagged.push(chk.finding);}
-        else passes++;
-      }else{
-        const isCrit=(exp==="YES"&&ans==="NO")||(exp==="NO"&&ans==="YES");
-        if(isCrit){criticalFails++;if(chk.finding)flagged.push(chk.finding);}
-        else if(ans==="WARN"){warnings++;if(chk.finding)flagged.push(chk.finding);}
-        else if(ans==="UNVERIFIABLE"||ans==="CONTEXT")unverifiable++;
-        else passes++;
-      }
-    }
-  }
-  return{criticalFails,warnings,passes,unverifiable,flagged};
 };
 
 function resizeToBase64(dataUrl,mtype,maxSide=1024){
@@ -268,75 +197,20 @@ export default function HintBookApp(){
     });
   };
 
-  const runAssessment=async(model,signal,onThink,onContent)=>{
-    const qs=pg.sections.map(s=>`[${s.id}] ${s.title}\n`+s.hints.map(h=>`  ${h[0]}: ${h[1]}${h[2]?` [${h[2]}]`:""}`).join("\n")).join("\n\n");
-    const pageThinking=useGuidance&&THINKING[pgId]?THINKING[pgId]:"";
-    const systemPrompt=`You are an expert document forensics examiner. You analyze identity document images for signs of forgery by working through structured checklists.
-
-Answer each check with exactly one of:
-- YES — feature confirmed present as described
-- NO — feature absent, wrong, or anomalous (potential red flag)
-- WARN — borderline, degraded, or ambiguous; warrants closer inspection
-- UNVERIFIABLE — cannot determine from the image (resolution, glare, crop, missing side, etc.)
-- CONTEXT — generation-dependent or descriptive question; describe what you observe
-
-Be rigorous and independent. Do not assume the document is genuine. If a check's precondition does not apply to this document (e.g. "if under 21…" on a 30-year-old's card), answer UNVERIFIABLE. If you cannot tell from the image, answer UNVERIFIABLE rather than guess.
-
-Return ONLY valid JSON in the exact schema requested, with no markdown fences, no commentary, no preamble.`;
-    const imgList=imgs.map((_,i)=>`${i}=${i===0?"front":i===1?"back":`image ${i+1}`}`).join(", ");
-    const userText=`Document type: ${pg.title}
-${pageThinking?`\nEXPERT FORENSIC GUIDANCE (applies to whole document):\n${pageThinking}\n`:""}
-Work through the following checklist against the attached document image(s). Provide a 1-sentence finding per check that names what you actually observed.
-
-REGION ANNOTATION:
-- For checks where answer is NO or WARN, include a "bbox" with normalized 0–1 coordinates [x1, y1, x2, y2] (left, top, right, bottom as fractions of image dimensions) of the region your finding refers to, plus "imgIdx" (${imgList}).
-- For YES, UNVERIFIABLE, or CONTEXT answers — and for absence-based checks where no specific region applies — OMIT the bbox and imgIdx fields entirely. Do not invent regions.
-- bbox example: [0.12, 0.34, 0.28, 0.41] = a box from 12% across, 34% down, to 28% across, 41% down.
-
-CHECKLIST:
-${qs}
-
-Return JSON in exactly this shape (do not include verdict/counts — those are computed downstream):
-{"summary":"2-3 sentence assessment naming specific anomalies, or confirming the document looks consistent","sections":[{"id":"","title":"","checks":[{"id":"","answer":"YES|NO|WARN|UNVERIFIABLE|CONTEXT","finding":"1 sentence","bbox":[0,0,0,0],"imgIdx":0}]}]}`;
-    const modelCfg=ASSESS_MODELS.find(m=>m.id===model)||{};
-    const provider=modelCfg.provider||"deepinfra";
-    const endpoint=provider==="openrouter"?"/api/openrouter/chat/completions":"/api/llm/chat/completions";
-    const extraBody=provider==="openrouter"&&modelCfg.thinking?{reasoning:{max_tokens:thinkBudget}}:{};
-    const raw=await streamSSE(
-      endpoint,
-      {model,temperature:assessTemp,max_tokens:assessMaxTok,...extraBody,messages:[
-        {role:"system",content:systemPrompt},
-        {role:"user",content:[
-          {type:"text",text:userText},
-          ...imgs.map(img=>({type:"image_url",image_url:{url:img.preview}}))
-        ]}
-      ]},
-      onThink,
-      onContent,
-      signal
-    );
-    let parsed;
-    try{
-      const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
-      if(s===-1||e===-1)throw new Error("No JSON object found in response");
-      const cleaned=raw.slice(s,e+1).replace(/,(\s*[}\]])/g,"$1");
-      parsed=JSON.parse(cleaned);
-    }catch(pe){throw new Error(`JSON parse error: ${pe.message}`);}
-    const{criticalFails,warnings,passes,unverifiable,flagged}=tallySections(pg,parsed.sections);
-    const totalHints=pg.sections.reduce((a,s)=>a+s.hints.length,0);
-    const verdict=deriveVerdict(criticalFails,warnings,passes,unverifiable,totalHints);
-    const summary=parsed.summary||(criticalFails===0&&warnings===0
-      ?`All ${totalHints} checks passed without anomalies.`
-      :`${criticalFails} critical fail${criticalFails!==1?"s":""}, ${warnings} warning${warnings!==1?"s":""}, ${unverifiable} unverifiable across ${totalHints} checks.${flagged.length?" "+flagged.slice(0,2).join(" "):""}`);
-    return{verdict,summary,criticalFails,warnings,passes,unverifiable,sections:parsed.sections||[]};
-  };
+  const callAssessment=(model,signal,onThink,onContent)=>runAssessment({
+    model,imgs,pg,
+    guidance:useGuidance&&THINKING[pgId]?THINKING[pgId]:"",
+    temperature:assessTemp,maxTokens:assessMaxTok,thinkBudget,
+    enabledTools:[],   // tools disabled until implementations are ready
+    onThink,onContent,signal,
+  });
 
   const doAssess=async()=>{
     if(!imgs.length||busy)return;
     const ctrl=new AbortController();assessAbort.current=ctrl;
     setBusy(true);setErr(null);setResult(null);setStreamThink("");setStreamContent("");
     try{
-      const finalResult=await runAssessment(assessModel,ctrl.signal,setStreamThink,setStreamContent);
+      const finalResult=await callAssessment(assessModel,ctrl.signal,setStreamThink,setStreamContent);
       setPageStore(p=>{const d=p[pgId]||mkPage();return updTab(p,d.activeTabId,{result:finalResult,model:assessModel,guidanceUsed:useGuidance&&!!THINKING[pgId],bench:null});});
     }catch(e){if(e.name!=="AbortError"&&e.message!=="__auth__")setErr(e.message||"Assessment failed");}
     finally{setBusy(false);setBmsg("");assessAbort.current=null;}
@@ -347,10 +221,9 @@ Return JSON in exactly this shape (do not include verdict/counts — those are c
     const ctrl=new AbortController();benchAbort.current=ctrl;assessAbort.current=ctrl;
     setBusy(true);setBenchBusy(true);setErr(null);setBenchErr(null);setResult(null);setStreamThink("");setStreamContent("");
     try{
-      // Primary streams into the visible thinking/content panes; baseline runs silently in parallel.
-      const [primary,baseline]=await Promise.all([
-        runAssessment(assessModel,ctrl.signal,setStreamThink,setStreamContent),
-        runAssessment(benchModel,ctrl.signal,()=>{},()=>{}),
+      const[primary,baseline]=await Promise.all([
+        callAssessment(assessModel,ctrl.signal,setStreamThink,setStreamContent),
+        callAssessment(benchModel,ctrl.signal,()=>{},()=>{}),
       ]);
       const diff=computeDiff(pg,primary,baseline);
       setPageStore(p=>{const d=p[pgId]||mkPage();return updTab(p,d.activeTabId,{result:primary,model:assessModel,guidanceUsed:useGuidance&&!!THINKING[pgId],bench:{model:benchModel,result:baseline,diff}});});
@@ -367,38 +240,12 @@ Return JSON in exactly this shape (do not include verdict/counts — those are c
     if(!sec||!hint)return;
     setRetrying(prev=>{const n=new Set(prev);n.add(checkId);return n;});
     const ctrl=new AbortController();
-    const pageThinking=useGuidance&&THINKING[pgId]?THINKING[pgId]:"";
-    const imgList=imgs.map((_,i)=>`${i}=${i===0?"front":i===1?"back":`image ${i+1}`}`).join(", ");
-    const systemPrompt=`You are an expert document forensics examiner. Re-examine a single specific check on the document image(s). Be rigorous and independent — do not assume the document is genuine. Answer with exactly one of YES, NO, WARN, UNVERIFIABLE, CONTEXT. If you cannot tell from the image, answer UNVERIFIABLE rather than guess. Return ONLY valid JSON.`;
-    const userText=`Document type: ${pg.title}
-${pageThinking?`\nEXPERT FORENSIC GUIDANCE:\n${pageThinking}\n`:""}
-Look at the image(s) carefully and re-assess ONE check:
-
-[${sec.id}] ${sec.title}
-${hint[0]}: ${hint[1]}${hint[2]?` [${hint[2]}]`:""}
-
-For NO or WARN answers, include "bbox" (normalized 0–1 [x1,y1,x2,y2]) and "imgIdx" (${imgList}). Otherwise omit both.
-
-Return JSON in exactly this shape:
-{"answer":"YES|NO|WARN|UNVERIFIABLE|CONTEXT","finding":"1 sentence naming what you observed","bbox":[0,0,0,0],"imgIdx":0}`;
     try{
-      const raw=await streamSSE(
-        "/api/llm/chat/completions",
-        {model:assessModel,temperature:assessTemp,max_tokens:1024,messages:[
-          {role:"system",content:systemPrompt},
-          {role:"user",content:[
-            {type:"text",text:userText},
-            ...imgs.map(img=>({type:"image_url",image_url:{url:img.preview}}))
-          ]}
-        ]},
-        ()=>{},()=>{},
-        ctrl.signal
-      );
-      const s=raw.indexOf("{"),e=raw.lastIndexOf("}");
-      if(s===-1||e===-1)throw new Error("No JSON in response");
-      const cleaned=raw.slice(s,e+1).replace(/,(\s*[}\]])/g,"$1");
-      const parsed=JSON.parse(cleaned);
-      if(!parsed.answer)throw new Error("Response missing answer field");
+      const parsed=await retryCheckFn({
+        model:assessModel,imgs,pg,sec,hint,
+        guidance:useGuidance&&THINKING[pgId]?THINKING[pgId]:"",
+        temperature:assessTemp,signal:ctrl.signal,
+      });
       const updatedCheck={id:checkId,answer:parsed.answer,finding:parsed.finding||""};
       if(parsed.bbox&&Array.isArray(parsed.bbox)&&parsed.bbox.length===4){updatedCheck.bbox=parsed.bbox;updatedCheck.imgIdx=typeof parsed.imgIdx==="number"?parsed.imgIdx:0;}
       setPageStore(p=>{
@@ -410,10 +257,9 @@ Return JSON in exactly this shape:
           ?tab.result.sections.map(rs=>rs.id!==sectionId?rs:{...rs,checks:(rs.checks||[]).some(c=>c.id===checkId)?rs.checks.map(c=>c.id===checkId?updatedCheck:c):[...(rs.checks||[]),updatedCheck]})
           :[...(tab.result.sections||[]),{id:sec.id,title:sec.title,checks:[updatedCheck]}];
         const{criticalFails,warnings,passes,unverifiable}=tallySections(pg,newSections);
-        const totalHints=pg.sections.reduce((a,s)=>a+s.hints.length,0);
-        const verdict=deriveVerdict(criticalFails,warnings,passes,unverifiable,totalHints);
-        const newResult={...tab.result,sections:newSections,criticalFails,warnings,passes,unverifiable,verdict};
-        return updTab(p,d.activeTabId,{result:newResult});
+        const total=pg.sections.reduce((a,s)=>a+s.hints.length,0);
+        const verdict=deriveVerdict(criticalFails,warnings,passes,unverifiable,total);
+        return updTab(p,d.activeTabId,{result:{...tab.result,sections:newSections,criticalFails,warnings,passes,unverifiable,verdict}});
       });
     }catch(ex){
       if(ex.name!=="AbortError"&&ex.message!=="__auth__")console.warn(`Retry ${checkId} failed:`,ex);
