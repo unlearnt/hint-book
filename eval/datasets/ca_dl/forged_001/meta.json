@@ -1,0 +1,5 @@
+{
+  "category": "forged",
+  "tampered": [],
+  "notes": "Fake CA DL (LN: DOE, FN: JOHN LEE, DL: D5265043, DOB 10/16/1986, ISS 12/15/2021, EXP 10/16/2026). Front and back of the same card (DL number D5265043 appears inside back string 21349D52650430401). Front is internally consistent against the listed checks (Gen 3 design with Gold Rush miner, REAL ID bear+star, name/date/number formats all valid, weight plausible, DOB-on-photo '10161986' matches DOB). Forgery is visible but does not map cleanly to a hint ID — captured in notes only, hence tampered=[]: (1) back has a non-standard 1D linear barcode at the very top edge above the magnetic strip — real CA backs only carry a PDF417; (2) 'ENDORSEMEN TS: None' on back has a stray space — should read 'ENDORSEMENTS'; (3) stray 'JOB' text artifact appears next to ISS field on front, suggesting digital editing; (4) field HAIR=BRN but the photo shows red/orange hair (hair can be dyed, so weaker signal). Source: Archive 2 / USA_California_Driver's_License_0.jpg + _1.jpg."
+}

@@ -1,0 +1,8 @@
+# Don't commit raw model outputs, per-image fixtures, or the local venv/cache.
+runs/
+datasets/*/*/front.*
+datasets/*/*/back.*
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
