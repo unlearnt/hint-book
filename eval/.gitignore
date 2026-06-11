@@ -6,3 +6,4 @@ datasets/*/*/back.*
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
+eval.venv/

@@ -1,0 +1,31 @@
+# Arizona Driver License — Expert Forensics Briefing
+
+## Near-certain fraud indicators
+
+Any single failure here effectively confirms forgery: **DL number not matching exactly 1 uppercase letter + 8 digits** (e.g. "B12345678"); barcode IIN not **636026**; a STANDARD (non-Travel-ID) license showing a 5- or 8-year expiry instead of running to the holder's **65th birthday**; **"DRIVER'S LICENSE"** with an apostrophe (genuine is **"DRIVER LICENSE"**); a card carrying BOTH a Travel ID star AND **"Not for federal identification"**; an under-21 holder on a horizontal card (must be vertical).
+
+## Arizona's signature tell — validity by card type
+
+Standard DLs **expire on the holder's 65th birthday** — issue-to-expiry spans can be decades, and forgers almost always apply a generic 5–8 year term. **Travel ID**: ~8 years under 65, ~5 years at 65+. Standard at 65+: ~5-year renewals. A "standard" card with an 8-year expiry, or a "Travel ID" running to age 65, is a structural contradiction. **Limited Term** (lawful presence) overrides both with shorter immigration-aligned terms.
+
+## Generation identification (2016 vs 2023)
+
+- **Gen 2023** (mid-Mar 2023+): fused polycarbonate, **laser-engraved grayscale photo**, **black laser-engraved Travel ID star**, **saguaro + ponderosa pine** artwork, **Dynaprint** dual-image element, tactile **Secure Surface**
+- **Gen 2016** (issued through 02/28/2023, valid for years due to age-65 expiry): **gold Travel ID star**, color dye-sub photo, no Dynaprint, no Secure Surface
+- A glossy color photo on a 2023-design card, or a black star on a pre-2023 design = generation contradiction
+
+## Specific forger mistakes
+
+- Eye color spelled out ("Brown") instead of AAMVA codes: **BRO, BLU, GRN, HAZ, GRY, BLK**
+- Class outside Arizona's set: **A/B/C** (CDL), **D** (regular), **G** (graduated/under-18), **M** (motorcycle) — a 16-year-old with Class D instead of **Class G** is inconsistent
+- All-numeric (legacy 9-digit SSN-style) DL number on a current-design card
+- Names not in **UPPERCASE**; height in cm instead of imperial feet-inches
+- DL number reused as the DD/audit value — these MUST differ
+
+## Cross-field barcode traps
+
+Verify the PDF417 against the front: **DAQ** (DL# — 1 letter + 8 digits, NOT all-numeric), **DCS/DAC/DAD** (last/first/middle name), **DBB** (DOB), **DBA** (expiry), **DBD** (issue), **DAU** (height), **DAY** (eye color), **DBC** (sex: **1=M, 2=F, 9=X**), **DAJ** (state, must equal **"AZ"**). Header IIN must be **636026**. A single mismatch is definitive tampering.
+
+## Visual security features
+
+Gen 2023 data is **laser-engraved into polycarbonate** — surface-printed data that scratches or smears = counterfeit. **Dynaprint** shows two distinct images that swap by viewing angle; static = fail. **Secure Surface** is a slightly raised tactile area on Gen 2023 — a perfectly flat 2023 card lacks an expected element. Under UV, expect localised Arizona motifs fluorescing while the body stays dark; an all-over blue glow indicates consumer PVC stock. **Microprinting** around portrait/edges must remain crisp under magnification.

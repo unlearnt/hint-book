@@ -3,9 +3,14 @@
 
 Writes eval/prompts/v{n}_<slug>.py — does NOT auto-run them.
 
+The latest baseline run is expected to be multi-state (the runner sweeps all
+configured states by default). Proposals are constrained to be DOCUMENT-AGNOSTIC:
+the meta-prompter only revises the SYSTEM prompt, and per-state expert text
+continues to be auto-injected via GUIDANCE at runtime.
+
 Usage:
-    python eval/iterate.py --page ca_dl --base v0_baseline --proposals 3
-    python eval/iterate.py --page ca_dl --base v0_baseline --proposals 2 \\
+    python eval/iterate.py --base v0_baseline --proposals 3
+    python eval/iterate.py --base v0_baseline --proposals 2 \\
         --model deepseek-ai/DeepSeek-V4-Pro
 """
 
@@ -36,22 +41,20 @@ DEFAULT_META_MODEL = "anthropic/claude-opus-4-7"
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
-    p.add_argument("--page", required=True)
     p.add_argument("--base", required=True, help="baseline variant name to revise from")
     p.add_argument("--proposals", type=int, default=3)
     p.add_argument("--model", default=DEFAULT_META_MODEL, help="meta-prompter model")
     return p.parse_args()
 
 
-def find_latest_report(page_id: str, variant: str) -> tuple[str, dict]:
+def find_latest_report(variant: str) -> tuple[str, dict]:
     runs_dir = EVAL_DIR / "runs"
     if not runs_dir.is_dir():
         raise FileNotFoundError("no runs/ directory")
-    matching = sorted(
-        d.name for d in runs_dir.iterdir() if d.is_dir() and d.name.endswith(f"__{variant}__{page_id}")
-    )
+    needle = f"__{variant}__"
+    matching = sorted(d.name for d in runs_dir.iterdir() if d.is_dir() and needle in d.name)
     if not matching:
-        raise FileNotFoundError(f"no runs for variant={variant} page={page_id}")
+        raise FileNotFoundError(f"no runs for variant={variant}")
     latest = matching[-1]
     report_path = runs_dir / latest / "report.json"
     if not report_path.is_file():
@@ -71,17 +74,34 @@ def load_variant(name: str):
     return mod
 
 
-def build_meta_prompt(*, page: dict, base, report: dict, proposals: int) -> str:
+def build_meta_prompt(*, base, report: dict, proposals: int) -> str:
     o = report["overall"]
 
     def pct(x):
         return "n/a" if x is None else f"{x * 100:.1f}%"
 
+    states = report.get("states") or []
+    by_state = report.get("by_state") or {}
+    state_lines = []
+    for st in states:
+        s = by_state.get(st["page"], {})
+        state_lines.append(
+            f"  - {st['page']:<26} "
+            f"acc={pct(s.get('per_check_accuracy'))}  "
+            f"tRecall={pct(s.get('tamper_recall'))}  "
+            f"tPrec={pct(s.get('tamper_precision'))}  "
+            f"verdict={pct(s.get('verdict_accuracy'))}  "
+            f"unver={pct(s.get('unverifiable_rate'))}  "
+            f"({len(st['examples'])} examples)"
+        )
+    states_text = "\n".join(state_lines) or "  (no per-state breakdown)"
+
     clusters_lines = []
     for c in report.get("failure_clusters", []):
+        page = c.get("page", "?")
         clusters_lines.append(
-            f"- Section {c['sectionId']}: expected {c['expected']} but model answered "
-            f"{c['predicted']}  (×{c['count']})"
+            f"- [{page}] Section {c['sectionId']}: expected {c['expected']} but model "
+            f"answered {c['predicted']}  (×{c['count']})"
         )
         for ex in c.get("examples", []):
             finding = f' — model said: "{ex["finding"]}"' if ex.get("finding") else ""
@@ -90,46 +110,62 @@ def build_meta_prompt(*, page: dict, base, report: dict, proposals: int) -> str:
             )
     clusters_text = "\n".join(clusters_lines) or "(none)"
 
-    section_lines = "\n".join(
-        f"  [{s['id']}] {s['title']} — {len(s['hints'])} checks" for s in page["sections"]
-    )
-    base_guidance = getattr(base, "GUIDANCE", None) or "(loaded per-page from src/hints/thinking/)"
-
     return dedent(
         f"""\
-        You are an expert prompt engineer optimising prompts for a document-fraud detection system.
+        You are an expert prompt engineer optimising the SYSTEM prompt for a multi-jurisdiction
+        document-fraud detection system.
 
-        The system feeds a vision LLM an identity document image plus a checklist of binary forensic questions ("hint page"). The model answers each check YES/NO/WARN/UNVERIFIABLE/CONTEXT. We score the model against ground-truth labels.
+        The system feeds a vision LLM an identity document image plus a per-document-type checklist
+        of binary forensic questions ("hint page"). The model answers each check
+        YES / NO / WARN / UNVERIFIABLE / CONTEXT. We score the model against ground-truth labels.
 
-        DOCUMENT TYPE: {page['title']} ({page['id']})
-        SECTIONS IN THIS HINT PAGE:
-        {section_lines}
+        IMPORTANT: the SAME system prompt is used for every supported document type
+        (currently {len(states)} US-state driver-license hint pages). Per-document expert
+        guidance (state-specific format anchors, generation differences, etc.) is loaded
+        separately from `src/hints/thinking/<page_id>.txt` and injected into the USER
+        message at runtime — you do NOT control it and MUST NOT try to replicate it.
+
+        STATES INCLUDED IN THIS EVAL:
+        {states_text}
 
         CURRENT BASELINE — variant "{base.NAME}":
 
-        --- SYSTEM PROMPT ---
+        --- SYSTEM PROMPT (this is what you revise) ---
         {base.SYSTEM}
 
-        --- EXPERT GUIDANCE (injected into user message) ---
-        {base_guidance}
-
-        LATEST EVAL RESULTS:
+        AGGREGATED EVAL RESULTS (across all states above):
         - per-check accuracy:  {pct(o['per_check_accuracy'])}
         - tamper recall:       {pct(o['tamper_recall'])}
         - tamper precision:    {pct(o['tamper_precision'])}
         - verdict accuracy:    {pct(o['verdict_accuracy'])}
         - unverifiable rate:   {pct(o['unverifiable_rate'])}
 
-        TOP FAILURE CLUSTERS (sorted by frequency):
+        TOP FAILURE CLUSTERS (tagged with the state they came from, sorted by frequency):
         {clusters_text}
 
         YOUR TASK:
-        Propose exactly {proposals} revised prompt variants. Each variant should target one or more of the failure clusters above with a clear hypothesis. Do NOT just shuffle wording — change the prompt in a way that should measurably move a specific metric.
+        Propose exactly {proposals} revised SYSTEM prompts. Each one should target failure
+        patterns that recur ACROSS multiple states (not quirks of a single state) with a
+        clear hypothesis. Do NOT just shuffle wording — change the prompt in a way that
+        should measurably move a specific aggregated metric.
 
-        Common levers:
-        - Tighten the rubric for when to answer UNVERIFIABLE vs WARN vs guessing (reduces dodge rate).
-        - Add concrete forensic anchors to expert guidance (e.g., "DL number is exactly 1 letter + 7 digits") — improves accuracy on format checks.
-        - Add chain-of-thought scaffolding for hard sections (e.g., MRZ parsing) — improves recall on subtle tampering.
+        HARD CONSTRAINTS (proposals that violate these will be discarded):
+        - The SYSTEM prompt MUST be document-type-agnostic. Do NOT mention any specific
+          US state, document type, generation year, security feature, check ID
+          (e.g. "S6.1", "A.4", "M.9"), or section name.
+        - Do NOT reference the words "California", "Arizona", "Nevada", "Texas",
+          "DL", "ID", "Real ID", "MRZ", etc. as if you know the document is one of those.
+        - Frame instructions in terms of generic forensic primitives: "format checks",
+          "cross-field consistency", "expected colour vs observed", "presence/absence of
+          named features", etc. The per-document checklist supplies all jurisdiction
+          specifics.
+
+        Common levers (apply at the document-agnostic level):
+        - Tighten the rubric for when to answer UNVERIFIABLE vs WARN vs guessing.
+        - Add a general decision procedure for cross-field consistency checks
+          ("when a question asks whether field X matches field Y, locate both, then…").
+        - Add chain-of-thought scaffolding triggered by the question text (e.g. when a
+          check mentions "format", first restate the expected format from the question).
         - Calibrate against false positives by stating decision boundaries explicitly.
 
         Return ONLY valid JSON in this exact shape, no fences, no preamble:
@@ -137,10 +173,9 @@ def build_meta_prompt(*, page: dict, base, report: dict, proposals: int) -> str:
           "proposals": [
             {{
               "slug": "short_kebab_name_of_change",
-              "hypothesis": "1-2 sentence claim about which metric this should move and why",
-              "targetClusters": ["S6 :: YES → NO", "S14 :: YES → MISSING"],
-              "system": "FULL revised system prompt",
-              "guidance": "FULL revised expert guidance (or empty string)"
+              "hypothesis": "1-2 sentence claim about which aggregated metric this should move and why",
+              "targetClusters": ["S6 :: YES → NO", "M.9 :: NO → YES"],
+              "system": "FULL revised system prompt (document-type-agnostic)"
             }}
           ]
         }}"""
@@ -148,23 +183,38 @@ def build_meta_prompt(*, page: dict, base, report: dict, proposals: int) -> str:
 
 
 PROMPT_FILE_TEMPLATE = '''\
-"""Auto-generated by eval/iterate.py.
+"""Auto-generated by eval/iterate.py — document-type-agnostic SYSTEM prompt.
 
 Hypothesis: {hypothesis}
 Targets:    {targets}
+
+Per-page expert text is auto-loaded from ../../src/hints/thinking/<page_id>.txt
+at runtime (same behavior as v0_baseline). This file only owns SYSTEM.
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 NAME = {name!r}
 
 SYSTEM = {system!r}
 
-GUIDANCE = {guidance!r}
+GUIDANCE: str | None = None  # None = auto-load per-page from src/hints/thinking/<id>.txt
+
+_THINKING_DIR = Path(__file__).resolve().parents[2] / "src" / "hints" / "thinking"
+
+
+def _load_guidance(page_id: str) -> str:
+    f = _THINKING_DIR / f"{{page_id}}.txt"
+    try:
+        return f.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return ""
 
 
 def build_user_text(*, page: dict, guidance: str | None, image_count: int) -> str:
-    g = guidance if guidance is not None else GUIDANCE
+    g = guidance if guidance is not None else _load_guidance(page["id"])
     checklist = "\\n\\n".join(
         f"[{{s['id']}}] {{s['title']}}\\n"
         + "\\n".join(
@@ -213,13 +263,12 @@ def main() -> int:
         print("DEEPINFRA_API_KEY not set", file=sys.stderr)
         return 1
 
-    page = load_hint_page(args.page)
     base = load_variant(args.base)
-    run, report = find_latest_report(args.page, args.base)
+    run, report = find_latest_report(args.base)
     print(f"Using run {run} as failure source.")
     print(f"Meta-prompter: {args.model}")
 
-    prompt = build_meta_prompt(page=page, base=base, report=report, proposals=args.proposals)
+    prompt = build_meta_prompt(base=base, report=report, proposals=args.proposals)
     r = chat(
         model=args.model,
         messages=[{"role": "user", "content": prompt}],
@@ -248,7 +297,6 @@ def main() -> int:
             targets=", ".join(p.get("targetClusters", [])) or "(unspecified)",
             name=name,
             system=p.get("system", ""),
-            guidance=p.get("guidance", ""),
         )
         file.write_text(body, encoding="utf-8")
         written.append({"name": name, "file": file, "hypothesis": p.get("hypothesis"),
@@ -262,7 +310,7 @@ def main() -> int:
         if w["targets"]:
             print(f"    targets: {', '.join(w['targets'])}")
         print()
-    print(f"Next: python eval/runner.py --page {args.page} --variant {written[0]['name']}")
+    print(f"Next: python eval/runner.py --variant {written[0]['name']}")
     return 0
 
 

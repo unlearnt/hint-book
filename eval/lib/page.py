@@ -15,10 +15,15 @@ from typing import Any
 import json5
 
 HINTS_DIR = Path(__file__).resolve().parents[2] / "src" / "hints"
+_HINTS_SEARCH = (HINTS_DIR, HINTS_DIR / "thinking")
 
 
 def load_hint_page(page_id: str) -> dict[str, Any]:
-    path = HINTS_DIR / f"{page_id}.js"
+    path = next((d / f"{page_id}.js" for d in _HINTS_SEARCH if (d / f"{page_id}.js").is_file()), None)
+    if path is None:
+        raise FileNotFoundError(
+            f"hint page {page_id}.js not found in any of: {[str(d) for d in _HINTS_SEARCH]}"
+        )
     raw = path.read_text(encoding="utf-8")
     m = re.match(r"\s*const\s+\w+\s*=\s*", raw)
     if not m:

@@ -1,0 +1,40 @@
+# Texas Driver License — Expert Forensics Briefing
+
+## Near-certain fraud indicators
+
+Any single failure here effectively confirms forgery: **DL number not matching exactly 8 numeric digits** (no letters, no separators); barcode IIN not **636015**; **"DRIVER'S LICENSE"** with an apostrophe (genuine is **"DRIVER LICENSE"**); an expiration whose month/day does NOT equal the holder's DOB month/day (Texas always expires on the **birthday**); an under-21 holder on a horizontal card; an "UNDER 21 UNTIL" / "UNDER 18 UNTIL" date that does NOT equal **DOB + 21** / **DOB + 18** exactly.
+
+## Generation identification (2009 / 2020 / 2025)
+
+Texas has exactly three currently-valid eras; a card whose design doesn't match its issue date is a forgery indicator:
+
+- **Gen 2025** (issued 08/18/2025+): **polycarbonate with laser-engraved personalisation**, **BLACK laser-engraved REAL ID star**, **Dynamic Look-Through window** with optically variable material, tactile raised surface feature, laser-engraved **mini portrait**
+- **Gen 2020** (02/24/2020 – 08/31/2025): **gold REAL ID star**, dye-sub/inkjet personalisation, no look-through element
+- **Gen 2009** (04/2009 – 02/23/2020): oldest still-valid design; 6-year terms out of circulation by **02/24/2026**, 8-year terms through ~2028. A freshly-issued card in the 2009 design = forgery
+
+Glossy inkjet photo on a post-Aug-2025 card, black laser-engraved star on a pre-2025 design, or a look-through element on a claimed-2009 card = definitive generation contradictions.
+
+## Specific forger mistakes
+
+- Validity term wrong for age: standard adult **~8 years**; drivers **85+** at issue get a shortened **2-year** term — a full 8-year span issued at 86 is inconsistent
+- Eye color spelled out instead of AAMVA codes: **BRO, BLU, GRN, HAZ, GRY, BLK**
+- Class outside Texas's set: **A, B, C** plus **M** (motorcycle) — no Class D/G
+- Sex spelled out ("MALE") or numeric — must be **M, F, or X**
+- DL number with a leading letter, or off-length (7- or 9-digit other-state schemes)
+- DL number reused as the DD/audit value — these MUST differ
+- Names not in **UPPERCASE**; height in cm instead of imperial feet-inches
+
+## Card-type status markers
+
+- **REAL ID compliant** (10/10/2016+): **circle-with-inset-star** in upper-right — **gold** on 2016–2025, **black laser-engraved** on Gen 2025
+- **Non-compliant**: star ABSENT
+- **LIMITED TERM** (lawful presence): printed and MUST coexist with a shortened validity term (not the standard 8 years)
+- A star whose color doesn't match the design era (gold on a 2025 card, black on a pre-2025 card) is a sophisticated-fake catch
+
+## Cross-field barcode traps
+
+Verify the PDF417 against the front: **DAQ** (DL# — 8 numeric digits), **DCS/DAC/DAD** (last/first/middle), **DBB** (DOB), **DBA** (expiry), **DBD** (issue), **DAU** (height), **DAY** (eye color), **DBC** (sex: **1=M, 2=F, 9=X**), **DAJ** (state, must equal **"TX"**). Header IIN must be **636015**. A single mismatch is definitive tampering.
+
+## Visual security features
+
+All current Texas generations are **polycarbonate** — a peelable laminate pouch or delaminating edge indicates a counterfeit. Gen 2025 adds a **Dynamic Look-Through window** visible when held to light, paired with a UV-reactive component (DL-73). The **mini portrait** must match the primary photo. Under UV expect localised Texas motifs (star/state outline) fluorescing while the body stays dark; an all-over blue glow indicates consumer paper/PVC stock. **Microprinting** must remain crisp under magnification.

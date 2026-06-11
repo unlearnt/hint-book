@@ -1,4 +1,4 @@
-"""DeepInfra OpenAI-compatible chat client + loose JSON parser."""
+"""OpenAI-compatible chat client supporting DeepInfra and OpenRouter, plus a loose JSON parser."""
 
 import json
 import re
@@ -7,7 +7,11 @@ from typing import Any
 
 import httpx
 
-API_BASE = "https://api.deepinfra.com/v1/openai"
+# provider name → (chat-completions URL, env var holding the API key)
+PROVIDERS: dict[str, tuple[str, str]] = {
+    "deepinfra":  ("https://api.deepinfra.com/v1/openai/chat/completions", "DEEPINFRA_API_KEY"),
+    "openrouter": ("https://openrouter.ai/api/v1/chat/completions",        "OPENROUTER_API_KEY"),
+}
 
 
 def chat(
@@ -15,26 +19,38 @@ def chat(
     model: str,
     messages: list[dict[str, Any]],
     api_key: str,
+    provider: str = "deepinfra",
+    thinking: bool = False,
+    think_budget: int = 8192,
     temperature: float = 0.1,
     max_tokens: int = 16384,
     timeout: float = 300.0,
 ) -> dict[str, Any]:
+    if provider not in PROVIDERS:
+        raise ValueError(f"Unknown provider {provider!r}; expected one of {list(PROVIDERS)}")
+    url, _ = PROVIDERS[provider]
+
+    body: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "stream": False,
+    }
+    # OpenRouter requires an explicit reasoning budget on thinking models; DeepInfra
+    # thinking models reason transparently without extra config.
+    if provider == "openrouter" and thinking:
+        body["reasoning"] = {"max_tokens": think_budget}
+
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    if provider == "openrouter":
+        # OpenRouter recommends a referer + app title for attribution / rate-limit tiering.
+        headers["HTTP-Referer"] = "https://hintbook.app"
+        headers["X-Title"] = "HintBook eval"
+
     t0 = time.time()
     with httpx.Client(timeout=timeout) as client:
-        resp = client.post(
-            f"{API_BASE}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": model,
-                "messages": messages,
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-                "stream": False,
-            },
-        )
+        resp = client.post(url, headers=headers, json=body)
     if resp.status_code != 200:
         raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:500]}")
     data = resp.json()

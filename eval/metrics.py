@@ -58,6 +58,34 @@ def index_page(page: dict) -> dict[str, dict]:
     return out
 
 
+def iter_states(manifest: dict) -> list[dict]:
+    """Return the manifest's state list. Tolerates the legacy single-page schema."""
+    if manifest.get("states"):
+        return manifest["states"]
+    return [
+        {
+            "page": manifest["page"],
+            "dataset_dir": manifest["page"],
+            "image_dir": manifest["page"],
+            "examples": manifest.get("examples", []),
+        }
+    ]
+
+
+def build_example_map(states: list[dict]) -> dict[tuple[str, str], dict]:
+    """Map (page_id, example_id) -> {meta, labels} loaded from disk."""
+    out: dict[tuple[str, str], dict] = {}
+    for st in states:
+        ds_root = EVAL_DIR / "datasets" / st["dataset_dir"]
+        for ex_id in st["examples"]:
+            meta_p = ds_root / ex_id / "meta.json"
+            labels_p = ds_root / ex_id / "labels.json"
+            meta = json.loads(meta_p.read_text(encoding="utf-8")) if meta_p.is_file() else {}
+            labels = json.loads(labels_p.read_text(encoding="utf-8")) if labels_p.is_file() else {}
+            out[(st["page"], ex_id)] = {"id": ex_id, "meta": meta, "labels": labels}
+    return out
+
+
 def verdict_bucket(v: str | None) -> str:
     if v == "APPEARS_LEGITIMATE":
         return "genuine"
@@ -78,7 +106,7 @@ def fmt_n(x) -> str:
     return "—" if x is None else str(x)
 
 
-def score_cell(*, page_idx: dict, raw_cell: dict, example: dict) -> dict:
+def score_cell(*, page_idx: dict, raw_cell: dict, example: dict, page_id: str) -> dict:
     labeled = []
     sections = (raw_cell.get("result") or {}).get("sections") or []
     by_check = {}
@@ -112,6 +140,7 @@ def score_cell(*, page_idx: dict, raw_cell: dict, example: dict) -> dict:
         "cell": {
             "variant": raw_cell.get("variant"),
             "model": raw_cell.get("model"),
+            "page": page_id,
             "example": raw_cell.get("example"),
         },
         "ok": bool(raw_cell.get("ok")) and not raw_cell.get("parse_error"),
@@ -184,13 +213,20 @@ def aggregate(cell_scores: list[dict]) -> dict:
 
 
 def failure_clusters(cell_scores: list[dict], top_k: int = 12) -> list[dict]:
+    """Cluster failures by (page, section, expected → predicted).
+
+    Including page in the key prevents two states' "S1" or "A.1" sections from
+    collapsing into one bucket when the questions are completely different.
+    """
     buckets: dict[str, dict] = defaultdict(lambda: {"count": 0, "examples": []})
     for c in cell_scores:
+        page_id = c["cell"].get("page", "?")
         for lbl in c["labeled"]:
             if lbl["correct"]:
                 continue
-            key = f"{lbl['sectionId']} :: {lbl['expected']} → {lbl['predicted']}"
+            key = f"{page_id} :: {lbl['sectionId']} :: {lbl['expected']} → {lbl['predicted']}"
             b = buckets[key]
+            b["page"] = page_id
             b["sectionId"] = lbl["sectionId"]
             b["expected"] = lbl["expected"]
             b["predicted"] = lbl["predicted"]
@@ -208,39 +244,51 @@ def failure_clusters(cell_scores: list[dict], top_k: int = 12) -> list[dict]:
 def report_one(name: str) -> dict:
     run = load_run(name)
     manifest = run["manifest"]
-    page = load_hint_page(manifest["page"])
-    page_idx = index_page(page)
+    states = iter_states(manifest)
 
-    dataset_dir = EVAL_DIR / "datasets" / manifest["page"]
-    example_map: dict[str, dict] = {}
-    for ex_id in manifest["examples"]:
-        meta_p = dataset_dir / ex_id / "meta.json"
-        labels_p = dataset_dir / ex_id / "labels.json"
-        meta = json.loads(meta_p.read_text(encoding="utf-8")) if meta_p.is_file() else {}
-        labels = json.loads(labels_p.read_text(encoding="utf-8")) if labels_p.is_file() else {}
-        example_map[ex_id] = {"id": ex_id, "meta": meta, "labels": labels}
+    # One page index + example map per state, keyed by page id.
+    page_idx_by_page: dict[str, dict] = {}
+    for st in states:
+        if st["page"] not in page_idx_by_page:
+            page_idx_by_page[st["page"]] = index_page(load_hint_page(st["page"]))
+    example_map = build_example_map(states)
 
     cell_scores = []
     for r in run["results"]:
-        ex = example_map.get(r.get("example"))
+        # Legacy single-page runs didn't record `page` in raw — fall back to manifest.
+        page_id = r.get("page") or manifest.get("page")
+        ex = example_map.get((page_id, r.get("example")))
         if not ex:
             continue
-        cell_scores.append(score_cell(page_idx=page_idx, raw_cell=r, example=ex))
+        page_idx = page_idx_by_page.get(page_id)
+        if page_idx is None:
+            continue
+        cell_scores.append(
+            score_cell(page_idx=page_idx, raw_cell=r, example=ex, page_id=page_id)
+        )
 
     overall = aggregate(cell_scores)
     by_model = {
         m: aggregate([c for c in cell_scores if c["cell"]["model"] == m])
         for m in sorted({c["cell"]["model"] for c in cell_scores})
     }
+    by_state = {
+        p: aggregate([c for c in cell_scores if c["cell"]["page"] == p])
+        for p in sorted({c["cell"]["page"] for c in cell_scores})
+    }
     clusters = failure_clusters(cell_scores)
 
     report = {
         "run": name,
-        "page": manifest["page"],
+        "page": manifest.get("page", "multi"),
         "variant": manifest["variant"],
         "models": manifest["models"],
-        "examples": manifest["examples"],
+        "states": [
+            {"page": s["page"], "dataset_dir": s["dataset_dir"], "examples": s["examples"]}
+            for s in states
+        ],
         "overall": overall,
+        "by_state": by_state,
         "by_model": by_model,
         "failure_clusters": clusters,
     }
@@ -251,11 +299,14 @@ def report_one(name: str) -> dict:
 
 def render_md(rep: dict) -> str:
     o = rep["overall"]
+    states = rep.get("states") or []
+    total_examples = sum(len(s["examples"]) for s in states)
+    state_list = ", ".join(s["page"] for s in states) or rep.get("page", "?")
     lines = [
         f"# {rep['run']}",
-        f"page=`{rep['page']}` · variant=`{rep['variant']}` · examples={len(rep['examples'])}",
+        f"variant=`{rep['variant']}` · states=[{state_list}] · examples={total_examples}",
         "",
-        "## Overall",
+        "## Overall (aggregated across all states)",
         "| metric | value |",
         "|---|---|",
         f"| per-check accuracy | {fmt_pct(o['per_check_accuracy'])} |",
@@ -267,7 +318,19 @@ def render_md(rep: dict) -> str:
         f"| tokens (sum)       | {fmt_n(o['tokens_total_sum'])} |",
         f"| cells              | {o['ok_cells']}/{o['cells']} ok · {o['parse_fails']} parse fail · {o['api_fails']} api fail |",
         "",
-        "## By model",
+        "## By state",
+        "| state | acc | tRecall | tPrec | verdict | unver | cells |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for p, s in (rep.get("by_state") or {}).items():
+        lines.append(
+            f"| {p} | {fmt_pct(s['per_check_accuracy'])} | {fmt_pct(s['tamper_recall'])} | "
+            f"{fmt_pct(s['tamper_precision'])} | {fmt_pct(s['verdict_accuracy'])} | "
+            f"{fmt_pct(s['unverifiable_rate'])} | {s['ok_cells']}/{s['cells']} |"
+        )
+    lines += [
+        "",
+        "## By model (aggregated across all states)",
         "| model | acc | tRecall | tPrec | verdict | unver | p50 ms |",
         "|---|---|---|---|---|---|---|",
     ]
@@ -277,11 +340,14 @@ def render_md(rep: dict) -> str:
             f"{fmt_pct(s['tamper_precision'])} | {fmt_pct(s['verdict_accuracy'])} | "
             f"{fmt_pct(s['unverifiable_rate'])} | {fmt_n(s['latency_ms_p50'])} |"
         )
-    lines += ["", "## Top failure clusters"]
+    lines += ["", "## Top failure clusters (across all states)"]
     if not rep["failure_clusters"]:
         lines.append("_none — every labeled check matched_")
     for c in rep["failure_clusters"]:
-        lines.append(f"- **{c['sectionId']}**  {c['expected']} → {c['predicted']}  ×{c['count']}")
+        page = c.get("page", "?")
+        lines.append(
+            f"- **{page} · {c['sectionId']}**  {c['expected']} → {c['predicted']}  ×{c['count']}"
+        )
         for ex in c["examples"]:
             extra = f": {ex['finding']}" if ex.get("finding") else ""
             lines.append(f"  - `{ex['checkId']}` {ex['example']} ({ex['model']}){extra}")
